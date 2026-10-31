@@ -257,7 +257,7 @@
       amount: Math.max(0, Number(x.amount) || 0),
       cycle: x.cycle === 'yearly' ? 'yearly' : 'monthly',
       month: Math.min(12, Math.max(1, Number(x.month) || 1)),
-      day: Math.min(31, Math.max(1, Number(x.day) || 1)),
+      day: (x.day === 0 || x.day === '0') ? 0 : Math.min(31, Math.max(1, Number(x.day) || 1)),   // 0 = 상시(날짜 없음)
       memo: String(x.memo || ''), active: x.active !== false,
       overrides: cleanOverrides(x.overrides),
     };
@@ -421,9 +421,12 @@
   const active = () => items.filter(i => i.active);
   const paidIn = (it, m) => it.cycle === 'monthly' || it.month === m;     // m: 1~12
   // 말일 보정: 31일 결제인데 해당 월이 30일까지면 말일로 처리
-  const dayIn = (it, y, m) => Math.min(it.day, new Date(y, m, 0).getDate());
+  // 결제일이 0(상시)이면 0을 돌려준다.
+  const dayIn = (it, y, m) => it.day ? Math.min(it.day, new Date(y, m, 0).getDate()) : 0;
+  const dayLabel = (it, y, m) => { const d = dayIn(it, y, m); return d ? `${d}일` : '상시'; };
 
   function nextPayment(it, from) {
+    if (!it.day) return null;                 // 날짜가 없는 상시 지출은 '다음 결제'에서 제외
     const y = from.getFullYear();
     for (let k = 0; k < 24; k++) {
       const m0 = from.getMonth() + k;
@@ -465,14 +468,14 @@
   function renderList() {
     const f = $('#filterCycle').value;
     const rows = items.filter(i => f === 'all' || i.cycle === f)
-      .sort((a, b) => (a.cycle === b.cycle ? a.day - b.day : a.cycle === 'monthly' ? -1 : 1));
+      .sort((a, b) => (a.cycle === b.cycle ? (a.day || 99) - (b.day || 99) : a.cycle === 'monthly' ? -1 : 1));
     $('#emptyMsg').classList.toggle('hidden', rows.length > 0);
     $('#tbody').innerHTML = rows.map(i => `
       <tr class="${i.active ? '' : 'off'}">
         <td><strong>${esc(i.name)}</strong>${hasVar(i) ? ' <span class="tag">월별 상이</span>' : ''}${i.memo ? `<div style="color:var(--muted);font-size:12px">${esc(i.memo)}</div>` : ''}</td>
         <td>${i.category ? `<span class="tag">${esc(i.category)}</span>` : ''}</td>
         <td><span class="tag ${i.cycle === 'yearly' ? 'y' : ''}">${i.cycle === 'monthly' ? '매월' : '매년'}</span></td>
-        <td>${i.cycle === 'yearly' ? i.month + '월 ' : ''}${i.day}일</td>
+        <td>${i.cycle === 'yearly' ? i.month + '월 ' : ''}${i.day ? i.day + '일' : '상시'}</td>
         <td class="num">${won(i.amount)}${hasVar(i) ? '<div class="hint">기본</div>' : ''}</td>
         <td class="num">${won(monthlyEq(i, thisYear()))}</td>
         <td class="row" style="justify-content:flex-end;flex-wrap:nowrap">
@@ -491,11 +494,11 @@
     const max = Math.max(...totals, 1);
     $('#months').innerHTML = totals.map((t, k) => {
       const m = k + 1;
-      const list = active().filter(i => paidIn(i, m)).sort((a, b) => dayIn(a, calYear, m) - dayIn(b, calYear, m));
+      const list = active().filter(i => paidIn(i, m)).sort((a, b) => (dayIn(a, calYear, m) || 99) - (dayIn(b, calYear, m) || 99));
       const isNow = now.getFullYear() === calYear && now.getMonth() === k;
       return `<div class="month ${isNow ? 'now' : ''}">
         <div class="mh"><span>${m}월</span><span>${won(t)}</span></div>
-        <ul>${list.map(i => `<li><span>${dayIn(i, calYear, m)}일 ${esc(i.name)}</span><span>${won(amountIn(i, calYear, m))}</span></li>`).join('') || '<li>없음</li>'}</ul>
+        <ul>${list.map(i => `<li><span>${dayLabel(i, calYear, m)} ${esc(i.name)}</span><span>${won(amountIn(i, calYear, m))}</span></li>`).join('') || '<li>없음</li>'}</ul>
         <div class="bar" style="width:${(t / max) * 100}%"></div>
       </div>`;
     }).join('');
@@ -525,7 +528,8 @@
   // ---- 폼 ---------------------------------------------------------------
   const form = $('#form');
   form.month.innerHTML = Array.from({ length: 12 }, (_, k) => `<option value="${k+1}">${k+1}월</option>`).join('');
-  form.day.innerHTML = Array.from({ length: 31 }, (_, k) => `<option value="${k+1}">${k+1}일</option>`).join('');
+  form.day.innerHTML = Array.from({ length: 31 }, (_, k) => `<option value="${k+1}">${k+1}일</option>`).join('')
+    + '<option value="0">상시 (날짜 없음)</option>';      // 생필품·식료품처럼 특정일에 나가지 않는 지출
   const syncCycle = () => {
     $('#monthField').classList.toggle('hidden', form.cycle.value !== 'yearly');
     $('#varBox').classList.toggle('hidden', form.cycle.value === 'yearly');   // 월별 금액은 매월 항목에만 적용
@@ -576,7 +580,7 @@
       amount: Math.max(0, Number(d.get('amount')) || 0),
       cycle: d.get('cycle'),
       month: Number(d.get('month')) || 1,
-      day: Number(d.get('day')) || 1,
+      day: d.get('day') === '0' ? 0 : (Number(d.get('day')) || 1),
       memo: d.get('memo').trim(),
     };
     rec.overrides = rec.cycle === 'monthly' ? cleanOverrides(formOv) : {};
@@ -633,7 +637,7 @@
     const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
     const head = ['항목','분류','주기','결제월','결제일','기본금액',`${thisYear()}년 월환산`,'상태','메모'];
     const rows = items.map(i => [i.name, i.category, i.cycle === 'monthly' ? '매월' : '매년',
-      i.cycle === 'yearly' ? i.month : '', i.day, i.amount, Math.round(monthlyEq(i, thisYear())),
+      i.cycle === 'yearly' ? i.month : '', i.day || '상시', i.amount, Math.round(monthlyEq(i, thisYear())),
       i.active ? '진행' : '중지', i.memo].map(q).join(','));
     download('fixed-expenses.csv', '﻿' + [head.map(q).join(','), ...rows].join('\n'), 'text/csv');
   };
