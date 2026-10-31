@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>고정지출 관리</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --card:#fff; --text:#1d2330; --muted:#6b7385; --line:#e3e6ec;
+    --accent:#2f5bea; --accent-weak:#e8eefe; --danger:#d23b3b; --ok:#1f9d63;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{--bg:#12151c; --card:#1b1f29; --text:#e8ebf2; --muted:#98a0b3; --line:#2b3140;
+      --accent:#7b9bff; --accent-weak:#232c4a; --danger:#ff7676; --ok:#4cd08d;}
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font:15px/1.5 -apple-system,"Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",sans-serif}
+  .wrap{max-width:960px;margin:0 auto;padding:20px 16px 60px}
+  h1{font-size:20px;margin:0 0 16px}
+  h2{font-size:16px;margin:0 0 12px}
+  .grid{display:grid;gap:12px}
+  .cards{grid-template-columns:repeat(auto-fit,minmax(200px,1fr));margin-bottom:16px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px}
+  .stat .label{color:var(--muted);font-size:13px}
+  .stat .value{font-size:22px;font-weight:700;margin-top:2px;font-variant-numeric:tabular-nums}
+  .stat .sub{color:var(--muted);font-size:12px;margin-top:2px}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .row.between{justify-content:space-between}
+  label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted)}
+  input,select,textarea,button{font:inherit;color:var(--text)}
+  input,select,textarea{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:0}
+  input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:-1px}
+  button{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px 12px;cursor:pointer}
+  button:hover{border-color:var(--accent)}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  button.danger{color:var(--danger)}
+  button.small{padding:4px 8px;font-size:13px}
+  .form{grid-template-columns:repeat(auto-fit,minmax(150px,1fr));align-items:end}
+  .form .wide{grid-column:1/-1}
+  table{width:100%;border-collapse:collapse}
+  th,td{padding:10px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}
+  th{font-size:12px;color:var(--muted);font-weight:600}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  tr.off td{opacity:.45}
+  .tag{display:inline-block;padding:1px 8px;border-radius:999px;font-size:12px;background:var(--accent-weak);color:var(--accent)}
+  .tag.y{background:#fff3df;color:#b86b00}
+  @media (prefers-color-scheme:dark){.tag.y{background:#3b2f17;color:#ffbd5c}}
+  .tabs{display:flex;gap:4px;margin-bottom:12px;border-bottom:1px solid var(--line)}
+  .tabs button{border:none;border-bottom:2px solid transparent;border-radius:0;background:none;color:var(--muted)}
+  .tabs button.active{color:var(--accent);border-bottom-color:var(--accent);font-weight:600}
+  .months{grid-template-columns:repeat(auto-fill,minmax(210px,1fr))}
+  .month{border:1px solid var(--line);border-radius:10px;padding:12px;background:var(--card)}
+  .month.now{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+  .month .mh{display:flex;justify-content:space-between;font-weight:600;margin-bottom:6px}
+  .month ul{list-style:none;margin:0;padding:0;font-size:13px;color:var(--muted)}
+  .month li{display:flex;justify-content:space-between;gap:8px}
+  .bar{height:8px;border-radius:4px;background:var(--accent);margin-top:8px;min-width:2px}
+  .empty{color:var(--muted);text-align:center;padding:28px 0}
+  .hidden{display:none}
+  .cat-bar{display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px}
+  .cat-bar .name{width:90px;flex:none}
+  .cat-bar .track{flex:1;background:var(--bg);border-radius:4px;height:10px;overflow:hidden}
+  .cat-bar .fill{height:100%;background:var(--accent)}
+  .cat-bar .amt{width:110px;text-align:right;font-variant-numeric:tabular-nums;flex:none}
+  .scroll{overflow-x:auto}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>고정지출 관리</h1>
+
+  <div class="grid cards" id="stats"></div>
+
+  <div class="card" style="margin-bottom:16px">
+    <h2 id="formTitle">고정지출 추가</h2>
+    <form id="form" class="grid form">
+      <label>항목명
+        <input name="name" required placeholder="예: 넷플릭스, 자동차보험">
+      </label>
+      <label>분류
+        <input name="category" list="cats" placeholder="예: 구독, 보험">
+        <datalist id="cats"></datalist>
+      </label>
+      <label>금액(원)
+        <input name="amount" type="number" min="0" step="1" required inputmode="numeric">
+      </label>
+      <label>결제 주기
+        <select name="cycle">
+          <option value="monthly">매월</option>
+          <option value="yearly">매년</option>
+        </select>
+      </label>
+      <label id="monthField" class="hidden">결제 월
+        <select name="month"></select>
+      </label>
+      <label>결제일
+        <select name="day"></select>
+      </label>
+      <label class="wide">메모
+        <input name="memo" placeholder="결제 수단, 해지 조건 등 (선택)">
+      </label>
+      <div class="row wide">
+        <button type="submit" class="primary" id="submitBtn">추가</button>
+        <button type="button" id="cancelBtn" class="hidden">취소</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="tabs" role="tablist">
+    <button class="active" data-tab="list">목록</button>
+    <button data-tab="calendar">연간 달력</button>
+    <button data-tab="category">분류별</button>
+  </div>
+
+  <section id="tab-list" class="card">
+    <div class="row between" style="margin-bottom:8px">
+      <div class="row">
+        <select id="filterCycle" aria-label="주기 필터">
+          <option value="all">전체</option>
+          <option value="monthly">매월</option>
+          <option value="yearly">매년</option>
+        </select>
+      </div>
+      <div class="row">
+        <button class="small" id="exportJson">JSON 내보내기</button>
+        <button class="small" id="exportCsv">CSV 내보내기</button>
+        <button class="small" id="importBtn">불러오기</button>
+        <input type="file" id="importFile" accept="application/json" class="hidden">
+      </div>
+    </div>
+    <div class="scroll"><table>
+      <thead><tr>
+        <th>항목</th><th>분류</th><th>주기</th><th>결제일</th>
+        <th class="num">금액</th><th class="num">월 환산</th><th></th>
+      </tr></thead>
+      <tbody id="tbody"></tbody>
+    </table></div>
+    <div id="emptyMsg" class="empty hidden">등록된 고정지출이 없습니다. 위 양식에서 추가해 주세요.</div>
+  </section>
+
+  <section id="tab-calendar" class="card hidden">
+    <div class="row between" style="margin-bottom:12px">
+      <h2 style="margin:0" id="calTitle"></h2>
+      <div class="row">
+        <button class="small" id="prevYear">◀</button>
+        <button class="small" id="thisYear">올해</button>
+        <button class="small" id="nextYear">▶</button>
+      </div>
+    </div>
+    <div class="grid months" id="months"></div>
+  </section>
+
+  <section id="tab-category" class="card hidden">
+    <h2>분류별 연간 지출</h2>
+    <div id="catChart"></div>
+  </section>
+</div>
+
+<script>
+(() => {
+  'use strict';
+  const KEY = 'fixed-expenses.v1';
+  const $ = (s, el = document) => el.querySelector(s);
+  const won = n => Math.round(n).toLocaleString('ko-KR') + '원';
+  const uid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random()));
+  const esc = s => String(s ?? '').replace(/[&<>"']/g,
+    c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+  /** @type {{id:string,name:string,category:string,amount:number,cycle:'monthly'|'yearly',month:number,day:number,memo:string,active:boolean}[]} */
+  let items = load();
+  let editingId = null;
+  let calYear = new Date().getFullYear();
+
+  function load() {
+    try { return JSON.parse(localStorage.getItem(KEY)) || []; } catch { return []; }
+  }
+  function save() {
+    try { localStorage.setItem(KEY, JSON.stringify(items)); } catch {}
+    render();
+  }
+
+  // ---- 계산 -------------------------------------------------------------
+  const monthlyEq = it => it.cycle === 'monthly' ? it.amount : it.amount / 12;
+  const annualOf  = it => it.cycle === 'monthly' ? it.amount * 12 : it.amount;
+  const active = () => items.filter(i => i.active);
+  const paidIn = (it, m) => it.cycle === 'monthly' || it.month === m;     // m: 1~12
+  // 말일 보정: 31일 결제인데 해당 월이 30일까지면 말일로 처리
+  const dayIn = (it, y, m) => Math.min(it.day, new Date(y, m, 0).getDate());
+
+  function nextPayment(it, from) {
+    const y = from.getFullYear();
+    for (let k = 0; k < 24; k++) {
+      const m0 = from.getMonth() + k;
+      const yy = y + Math.floor(m0 / 12), mm = (m0 % 12) + 1;
+      if (!paidIn(it, mm)) continue;
+      const d = new Date(yy, mm - 1, dayIn(it, yy, mm));
+      if (d >= new Date(from.getFullYear(), from.getMonth(), from.getDate())) return d;
+    }
+    return null;
+  }
+
+  // ---- 렌더링 -----------------------------------------------------------
+  function render() {
+    renderStats(); renderList(); renderCalendar(); renderCategory(); renderCats();
+  }
+
+  function renderStats() {
+    const a = active();
+    const mSum = a.filter(i => i.cycle === 'monthly').reduce((s, i) => s + i.amount, 0);
+    const ySum = a.filter(i => i.cycle === 'yearly').reduce((s, i) => s + i.amount, 0);
+    const annual = a.reduce((s, i) => s + annualOf(i), 0);
+    const now = new Date(), thisM = now.getMonth() + 1;
+    const thisMonthTotal = a.filter(i => paidIn(i, thisM)).reduce((s, i) => s + i.amount, 0);
+    const upcoming = a.map(i => ({ i, d: nextPayment(i, now) })).filter(x => x.d)
+      .sort((p, q) => p.d - q.d)[0];
+    const cards = [
+      ['매월 고정지출', won(mSum), `${a.filter(i => i.cycle === 'monthly').length}건`],
+      ['연간 고정지출(매년 결제분)', won(ySum), `${a.filter(i => i.cycle === 'yearly').length}건`],
+      ['연 환산 총액', won(annual), `월 평균 ${won(annual / 12)}`],
+      [`${thisM}월 결제 예정`, won(thisMonthTotal), '매월분 + 이번 달 연간분'],
+      ['다음 결제', upcoming ? `${upcoming.d.getMonth()+1}/${upcoming.d.getDate()}` : '-',
+        upcoming ? `${upcoming.i.name} · ${won(upcoming.i.amount)}` : '예정 없음'],
+    ];
+    $('#stats').innerHTML = cards.map(([l, v, s]) =>
+      `<div class="card stat"><div class="label">${esc(l)}</div><div class="value">${esc(v)}</div><div class="sub">${esc(s)}</div></div>`).join('');
+  }
+
+  function renderList() {
+    const f = $('#filterCycle').value;
+    const rows = items.filter(i => f === 'all' || i.cycle === f)
+      .sort((a, b) => (a.cycle === b.cycle ? a.day - b.day : a.cycle === 'monthly' ? -1 : 1));
+    $('#emptyMsg').classList.toggle('hidden', rows.length > 0);
+    $('#tbody').innerHTML = rows.map(i => `
+      <tr class="${i.active ? '' : 'off'}">
+        <td><strong>${esc(i.name)}</strong>${i.memo ? `<div style="color:var(--muted);font-size:12px">${esc(i.memo)}</div>` : ''}</td>
+        <td>${i.category ? `<span class="tag">${esc(i.category)}</span>` : ''}</td>
+        <td><span class="tag ${i.cycle === 'yearly' ? 'y' : ''}">${i.cycle === 'monthly' ? '매월' : '매년'}</span></td>
+        <td>${i.cycle === 'yearly' ? i.month + '월 ' : ''}${i.day}일</td>
+        <td class="num">${won(i.amount)}</td>
+        <td class="num">${won(monthlyEq(i))}</td>
+        <td class="row" style="justify-content:flex-end;flex-wrap:nowrap">
+          <button class="small" data-act="toggle" data-id="${i.id}">${i.active ? '중지' : '재개'}</button>
+          <button class="small" data-act="edit" data-id="${i.id}">수정</button>
+          <button class="small danger" data-act="del" data-id="${i.id}">삭제</button>
+        </td>
+      </tr>`).join('');
+  }
+
+  function renderCalendar() {
+    $('#calTitle').textContent = `${calYear}년 월별 결제 내역`;
+    const now = new Date();
+    const totals = Array.from({ length: 12 }, (_, k) =>
+      active().filter(i => paidIn(i, k + 1)).reduce((s, i) => s + i.amount, 0));
+    const max = Math.max(...totals, 1);
+    $('#months').innerHTML = totals.map((t, k) => {
+      const m = k + 1;
+      const list = active().filter(i => paidIn(i, m)).sort((a, b) => dayIn(a, calYear, m) - dayIn(b, calYear, m));
+      const isNow = now.getFullYear() === calYear && now.getMonth() === k;
+      return `<div class="month ${isNow ? 'now' : ''}">
+        <div class="mh"><span>${m}월</span><span>${won(t)}</span></div>
+        <ul>${list.map(i => `<li><span>${dayIn(i, calYear, m)}일 ${esc(i.name)}</span><span>${won(i.amount)}</span></li>`).join('') || '<li>없음</li>'}</ul>
+        <div class="bar" style="width:${(t / max) * 100}%"></div>
+      </div>`;
+    }).join('');
+  }
+
+  function renderCategory() {
+    const map = new Map();
+    for (const i of active()) {
+      const c = i.category || '미분류';
+      map.set(c, (map.get(c) || 0) + annualOf(i));
+    }
+    const arr = [...map].sort((a, b) => b[1] - a[1]);
+    const total = arr.reduce((s, [, v]) => s + v, 0) || 1;
+    $('#catChart').innerHTML = arr.length ? arr.map(([c, v]) => `
+      <div class="cat-bar"><span class="name">${esc(c)}</span>
+        <span class="track"><span class="fill" style="display:block;width:${(v / total) * 100}%"></span></span>
+        <span class="amt">${won(v)} (${Math.round((v / total) * 100)}%)</span></div>`).join('')
+      : '<div class="empty">데이터가 없습니다.</div>';
+  }
+
+  function renderCats() {
+    const set = new Set(items.map(i => i.category).filter(Boolean));
+    $('#cats').innerHTML = [...set].map(c => `<option value="${esc(c)}">`).join('');
+  }
+
+  // ---- 폼 ---------------------------------------------------------------
+  const form = $('#form');
+  form.month.innerHTML = Array.from({ length: 12 }, (_, k) => `<option value="${k+1}">${k+1}월</option>`).join('');
+  form.day.innerHTML = Array.from({ length: 31 }, (_, k) => `<option value="${k+1}">${k+1}일</option>`).join('');
+  const syncCycle = () => $('#monthField').classList.toggle('hidden', form.cycle.value !== 'yearly');
+  form.cycle.addEventListener('change', syncCycle);
+
+  function resetForm() {
+    editingId = null; form.reset(); syncCycle();
+    $('#formTitle').textContent = '고정지출 추가';
+    $('#submitBtn').textContent = '추가';
+    $('#cancelBtn').classList.add('hidden');
+  }
+  $('#cancelBtn').addEventListener('click', resetForm);
+
+  form.addEventListener('submit', e => {
+    e.preventDefault();
+    const d = new FormData(form);
+    const rec = {
+      name: d.get('name').trim(),
+      category: d.get('category').trim(),
+      amount: Math.max(0, Number(d.get('amount')) || 0),
+      cycle: d.get('cycle'),
+      month: Number(d.get('month')) || 1,
+      day: Number(d.get('day')) || 1,
+      memo: d.get('memo').trim(),
+    };
+    if (!rec.name) return;
+    if (editingId) {
+      items = items.map(i => i.id === editingId ? { ...i, ...rec } : i);
+    } else {
+      items.push({ id: uid(), active: true, ...rec });
+    }
+    resetForm(); save();
+  });
+
+  $('#tbody').addEventListener('click', e => {
+    const b = e.target.closest('button[data-act]'); if (!b) return;
+    const it = items.find(i => i.id === b.dataset.id); if (!it) return;
+    if (b.dataset.act === 'toggle') { it.active = !it.active; save(); }
+    else if (b.dataset.act === 'del') {
+      if (confirm(`'${it.name}' 항목을 삭제할까요?`)) { items = items.filter(i => i !== it); save(); }
+    } else {
+      editingId = it.id;
+      for (const k of ['name','category','amount','cycle','month','day','memo']) form[k].value = it[k];
+      syncCycle();
+      $('#formTitle').textContent = '고정지출 수정';
+      $('#submitBtn').textContent = '저장';
+      $('#cancelBtn').classList.remove('hidden');
+      form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  });
+
+  // ---- 탭 / 필터 / 연도 ---------------------------------------------------
+  document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('active', x === b));
+    for (const t of ['list', 'calendar', 'category'])
+      $('#tab-' + t).classList.toggle('hidden', t !== b.dataset.tab);
+  }));
+  $('#filterCycle').addEventListener('change', renderList);
+  $('#prevYear').onclick = () => { calYear--; renderCalendar(); };
+  $('#nextYear').onclick = () => { calYear++; renderCalendar(); };
+  $('#thisYear').onclick = () => { calYear = new Date().getFullYear(); renderCalendar(); };
+
+  // ---- 내보내기 / 불러오기 -------------------------------------------------
+  function download(name, text, type) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([text], { type }));
+    a.download = name; a.click(); URL.revokeObjectURL(a.href);
+  }
+  $('#exportJson').onclick = () =>
+    download('fixed-expenses.json', JSON.stringify(items, null, 2), 'application/json');
+  $('#exportCsv').onclick = () => {
+    const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const head = ['항목','분류','주기','결제월','결제일','금액','월환산','상태','메모'];
+    const rows = items.map(i => [i.name, i.category, i.cycle === 'monthly' ? '매월' : '매년',
+      i.cycle === 'yearly' ? i.month : '', i.day, i.amount, Math.round(monthlyEq(i)),
+      i.active ? '진행' : '중지', i.memo].map(q).join(','));
+    download('fixed-expenses.csv', '﻿' + [head.map(q).join(','), ...rows].join('\n'), 'text/csv');
+  };
+  $('#importBtn').onclick = () => $('#importFile').click();
+  $('#importFile').addEventListener('change', async e => {
+    const file = e.target.files[0]; if (!file) return;
+    try {
+      const data = JSON.parse(await file.text());
+      if (!Array.isArray(data)) throw new Error('형식 오류');
+      const clean = data.filter(x => x && x.name).map(x => ({
+        id: uid(), name: String(x.name), category: String(x.category || ''),
+        amount: Math.max(0, Number(x.amount) || 0),
+        cycle: x.cycle === 'yearly' ? 'yearly' : 'monthly',
+        month: Math.min(12, Math.max(1, Number(x.month) || 1)),
+        day: Math.min(31, Math.max(1, Number(x.day) || 1)),
+        memo: String(x.memo || ''), active: x.active !== false,
+      }));
+      if (confirm(`${clean.length}건을 불러옵니다. 기존 데이터를 대체할까요?\n(취소: 기존 데이터에 추가)`))
+        items = clean; else items = items.concat(clean);
+      save();
+    } catch { alert('올바른 JSON 파일이 아닙니다.'); }
+    e.target.value = '';
+  });
+
+  syncCycle(); render();
+})();
+</script>
+</body>
+</html>
