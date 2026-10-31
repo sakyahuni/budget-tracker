@@ -68,6 +68,10 @@
   .storage .note{color:var(--muted);font-size:12px;margin-top:4px}
   .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:var(--muted)}
   .dot.ok{background:var(--ok)} .dot.warn{background:#e0a100} .dot.err{background:var(--danger)}
+  details.wide{border:1px dashed var(--line);border-radius:8px;padding:8px 12px}
+  details.wide summary{cursor:pointer;color:var(--muted);font-size:13px}
+  .mamt{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px}
+  .hint{color:var(--muted);font-size:12px}
 </style>
 </head>
 <body>
@@ -94,7 +98,7 @@
         <input name="category" list="cats" placeholder="예: 구독, 보험">
         <datalist id="cats"></datalist>
       </label>
-      <label>금액(원)
+      <label>기본 금액(원)
         <input name="amount" type="number" min="0" step="1" required inputmode="numeric">
       </label>
       <label>결제 주기
@@ -112,6 +116,16 @@
       <label class="wide">메모
         <input name="memo" placeholder="결제 수단, 해지 조건 등 (선택)">
       </label>
+      <details id="varBox" class="wide">
+        <summary>월별 금액이 달라지는 항목 (가스·수도요금 등)</summary>
+        <div class="row" style="margin:8px 0">
+          <label style="flex-direction:row;align-items:center;gap:8px">연도
+            <select id="varYear"></select>
+          </label>
+          <span class="hint">비워 두면 기본 금액이 적용됩니다.</span>
+        </div>
+        <div class="mamt" id="varInputs"></div>
+      </details>
       <div class="row wide">
         <button type="submit" class="primary" id="submitBtn">추가</button>
         <button type="button" id="cancelBtn" class="hidden">취소</button>
@@ -164,7 +178,7 @@
   </section>
 
   <section id="tab-category" class="card hidden">
-    <h2>분류별 연간 지출</h2>
+    <h2 id="catTitle">분류별 연간 지출</h2>
     <div id="catChart"></div>
   </section>
 </div>
@@ -179,7 +193,8 @@
   const esc = s => String(s ?? '').replace(/[&<>"']/g,
     c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
-  /** @type {{id:string,name:string,category:string,amount:number,cycle:'monthly'|'yearly',month:number,day:number,memo:string,active:boolean}[]} */
+  /** @type {{id:string,name:string,category:string,amount:number,cycle:'monthly'|'yearly',month:number,day:number,memo:string,active:boolean,overrides:Object<string,number>}[]}
+   *  amount: 기본 금액 / overrides: 'YYYY-MM' → 해당 월의 실제 금액 (없는 달은 기본 금액 적용) */
   let items = load();
   let editingId = null;
   let calYear = new Date().getFullYear();
@@ -224,6 +239,17 @@
   const loadHandle  = () => idb('readonly', s => s.get('handle'));
   const clearHandle = () => idb('readwrite', s => s.delete('handle'));
 
+  function cleanOverrides(o) {
+    const out = {};
+    if (o && typeof o === 'object') {
+      for (const [k, v] of Object.entries(o)) {
+        if (/^\d{4}-(0[1-9]|1[0-2])$/.test(k) && v !== null && v !== '' && Number.isFinite(Number(v)))
+          out[k] = Math.max(0, Number(v));
+      }
+    }
+    return out;
+  }
+
   function normalize(x) {
     return {
       id: typeof x.id === 'string' && x.id ? x.id : uid(),
@@ -233,17 +259,22 @@
       month: Math.min(12, Math.max(1, Number(x.month) || 1)),
       day: Math.min(31, Math.max(1, Number(x.day) || 1)),
       memo: String(x.memo || ''), active: x.active !== false,
+      overrides: cleanOverrides(x.overrides),
     };
+  }
+
+  // 배열 또는 { items: [...] } 형태를 모두 받아 항목 배열로 변환한다. 형식 오류면 예외.
+  function parseItems(d) {
+    const arr = Array.isArray(d) ? d : d && d.items;
+    if (!Array.isArray(arr)) throw new Error('지원하지 않는 파일 형식입니다.');
+    return arr.filter(x => x && x.name).map(normalize);
   }
 
   // 파일 내용을 읽어 항목 배열로 반환. 빈 파일이면 null. 형식 오류면 예외.
   async function readFile(h) {
     const text = (await (await h.getFile()).text()).trim();
     if (!text) return null;
-    const d = JSON.parse(text);
-    const arr = Array.isArray(d) ? d : d && d.items;
-    if (!Array.isArray(arr)) throw new Error('지원하지 않는 파일 형식입니다.');
-    return arr.filter(x => x && x.name).map(normalize);
+    return parseItems(JSON.parse(text));
   }
 
   function queueWrite() { clearTimeout(timer); timer = setTimeout(writeFile, 300); }
@@ -374,8 +405,19 @@
   });
 
   // ---- 계산 -------------------------------------------------------------
-  const monthlyEq = it => it.cycle === 'monthly' ? it.amount : it.amount / 12;
-  const annualOf  = it => it.cycle === 'monthly' ? it.amount * 12 : it.amount;
+  const thisYear = () => new Date().getFullYear();
+  const ymKey = (y, m) => `${y}-${String(m).padStart(2, '0')}`;
+  const hasVar = it => !!it.overrides && Object.keys(it.overrides).length > 0;
+  // y년 m월의 금액: 해당 월 실제 금액이 있으면 그 값, 없으면 기본 금액
+  const amountIn = (it, y, m) => {
+    const v = it.overrides && it.overrides[ymKey(y, m)];
+    return typeof v === 'number' ? v : it.amount;
+  };
+  // y년 한 해 동안의 지출 합계
+  const annualOf = (it, y = thisYear()) => it.cycle === 'monthly'
+    ? Array.from({ length: 12 }, (_, k) => amountIn(it, y, k + 1)).reduce((s, v) => s + v, 0)
+    : amountIn(it, y, it.month);
+  const monthlyEq = (it, y = thisYear()) => annualOf(it, y) / 12;
   const active = () => items.filter(i => i.active);
   const paidIn = (it, m) => it.cycle === 'monthly' || it.month === m;     // m: 1~12
   // 말일 보정: 31일 결제인데 해당 월이 30일까지면 말일로 처리
@@ -402,18 +444,19 @@
     const a = active();
     const mSum = a.filter(i => i.cycle === 'monthly').reduce((s, i) => s + i.amount, 0);
     const ySum = a.filter(i => i.cycle === 'yearly').reduce((s, i) => s + i.amount, 0);
-    const annual = a.reduce((s, i) => s + annualOf(i), 0);
+    const yr = thisYear();
+    const annual = a.reduce((s, i) => s + annualOf(i, yr), 0);
     const now = new Date(), thisM = now.getMonth() + 1;
-    const thisMonthTotal = a.filter(i => paidIn(i, thisM)).reduce((s, i) => s + i.amount, 0);
+    const thisMonthTotal = a.filter(i => paidIn(i, thisM)).reduce((s, i) => s + amountIn(i, yr, thisM), 0);
     const upcoming = a.map(i => ({ i, d: nextPayment(i, now) })).filter(x => x.d)
       .sort((p, q) => p.d - q.d)[0];
     const cards = [
-      ['매월 고정지출', won(mSum), `${a.filter(i => i.cycle === 'monthly').length}건`],
+      ['매월 고정지출', won(mSum), `${a.filter(i => i.cycle === 'monthly').length}건 · 기본 금액 기준`],
       ['연간 고정지출(매년 결제분)', won(ySum), `${a.filter(i => i.cycle === 'yearly').length}건`],
-      ['연 환산 총액', won(annual), `월 평균 ${won(annual / 12)}`],
+      ['연 환산 총액', won(annual), `${yr}년 기준 · 월 평균 ${won(annual / 12)}`],
       [`${thisM}월 결제 예정`, won(thisMonthTotal), '매월분 + 이번 달 연간분'],
       ['다음 결제', upcoming ? `${upcoming.d.getMonth()+1}/${upcoming.d.getDate()}` : '-',
-        upcoming ? `${upcoming.i.name} · ${won(upcoming.i.amount)}` : '예정 없음'],
+        upcoming ? `${upcoming.i.name} · ${won(amountIn(upcoming.i, upcoming.d.getFullYear(), upcoming.d.getMonth() + 1))}` : '예정 없음'],
     ];
     $('#stats').innerHTML = cards.map(([l, v, s]) =>
       `<div class="card stat"><div class="label">${esc(l)}</div><div class="value">${esc(v)}</div><div class="sub">${esc(s)}</div></div>`).join('');
@@ -426,12 +469,12 @@
     $('#emptyMsg').classList.toggle('hidden', rows.length > 0);
     $('#tbody').innerHTML = rows.map(i => `
       <tr class="${i.active ? '' : 'off'}">
-        <td><strong>${esc(i.name)}</strong>${i.memo ? `<div style="color:var(--muted);font-size:12px">${esc(i.memo)}</div>` : ''}</td>
+        <td><strong>${esc(i.name)}</strong>${hasVar(i) ? ' <span class="tag">월별 상이</span>' : ''}${i.memo ? `<div style="color:var(--muted);font-size:12px">${esc(i.memo)}</div>` : ''}</td>
         <td>${i.category ? `<span class="tag">${esc(i.category)}</span>` : ''}</td>
         <td><span class="tag ${i.cycle === 'yearly' ? 'y' : ''}">${i.cycle === 'monthly' ? '매월' : '매년'}</span></td>
         <td>${i.cycle === 'yearly' ? i.month + '월 ' : ''}${i.day}일</td>
-        <td class="num">${won(i.amount)}</td>
-        <td class="num">${won(monthlyEq(i))}</td>
+        <td class="num">${won(i.amount)}${hasVar(i) ? '<div class="hint">기본</div>' : ''}</td>
+        <td class="num">${won(monthlyEq(i, thisYear()))}</td>
         <td class="row" style="justify-content:flex-end;flex-wrap:nowrap">
           <button class="small" data-act="toggle" data-id="${i.id}">${i.active ? '중지' : '재개'}</button>
           <button class="small" data-act="edit" data-id="${i.id}">수정</button>
@@ -444,7 +487,7 @@
     $('#calTitle').textContent = `${calYear}년 월별 결제 내역`;
     const now = new Date();
     const totals = Array.from({ length: 12 }, (_, k) =>
-      active().filter(i => paidIn(i, k + 1)).reduce((s, i) => s + i.amount, 0));
+      active().filter(i => paidIn(i, k + 1)).reduce((s, i) => s + amountIn(i, calYear, k + 1), 0));
     const max = Math.max(...totals, 1);
     $('#months').innerHTML = totals.map((t, k) => {
       const m = k + 1;
@@ -452,7 +495,7 @@
       const isNow = now.getFullYear() === calYear && now.getMonth() === k;
       return `<div class="month ${isNow ? 'now' : ''}">
         <div class="mh"><span>${m}월</span><span>${won(t)}</span></div>
-        <ul>${list.map(i => `<li><span>${dayIn(i, calYear, m)}일 ${esc(i.name)}</span><span>${won(i.amount)}</span></li>`).join('') || '<li>없음</li>'}</ul>
+        <ul>${list.map(i => `<li><span>${dayIn(i, calYear, m)}일 ${esc(i.name)}</span><span>${won(amountIn(i, calYear, m))}</span></li>`).join('') || '<li>없음</li>'}</ul>
         <div class="bar" style="width:${(t / max) * 100}%"></div>
       </div>`;
     }).join('');
@@ -460,9 +503,10 @@
 
   function renderCategory() {
     const map = new Map();
+    $('#catTitle').textContent = `분류별 연간 지출 (${thisYear()}년)`;
     for (const i of active()) {
       const c = i.category || '미분류';
-      map.set(c, (map.get(c) || 0) + annualOf(i));
+      map.set(c, (map.get(c) || 0) + annualOf(i, thisYear()));
     }
     const arr = [...map].sort((a, b) => b[1] - a[1]);
     const total = arr.reduce((s, [, v]) => s + v, 0) || 1;
@@ -482,11 +526,40 @@
   const form = $('#form');
   form.month.innerHTML = Array.from({ length: 12 }, (_, k) => `<option value="${k+1}">${k+1}월</option>`).join('');
   form.day.innerHTML = Array.from({ length: 31 }, (_, k) => `<option value="${k+1}">${k+1}일</option>`).join('');
-  const syncCycle = () => $('#monthField').classList.toggle('hidden', form.cycle.value !== 'yearly');
+  const syncCycle = () => {
+    $('#monthField').classList.toggle('hidden', form.cycle.value !== 'yearly');
+    $('#varBox').classList.toggle('hidden', form.cycle.value === 'yearly');   // 월별 금액은 매월 항목에만 적용
+  };
   form.cycle.addEventListener('change', syncCycle);
+
+  // 월별 금액 입력란: 편집 중인 값은 formOv에 모아 두었다가 저장 시 항목에 반영한다.
+  let formOv = {}, varY = thisYear();
+  const varYear = $('#varYear'), varInputs = $('#varInputs');
+
+  function renderVar() {
+    const ys = new Set([-3, -2, -1, 0, 1].map(d => thisYear() + d).concat(varY));
+    for (const k of Object.keys(formOv)) ys.add(Number(k.slice(0, 4)));
+    varYear.innerHTML = [...ys].sort().map(y => `<option value="${y}">${y}년</option>`).join('');
+    varYear.value = String(varY);
+    varInputs.innerHTML = Array.from({ length: 12 }, (_, k) => {
+      const v = formOv[ymKey(varY, k + 1)];
+      return `<label>${k + 1}월<input type="number" min="0" step="1" inputmode="numeric" data-m="${k + 1}"
+        value="${v ?? ''}" placeholder="${esc(form.amount.value || '기본')}"></label>`;
+    }).join('');
+  }
+  function flushVar() {                       // 화면의 입력값을 formOv로 옮긴다 (빈 칸 = 기본 금액)
+    varInputs.querySelectorAll('input').forEach(inp => {
+      const key = ymKey(varY, inp.dataset.m);
+      if (inp.value === '') delete formOv[key]; else formOv[key] = Math.max(0, Number(inp.value) || 0);
+    });
+  }
+  varYear.addEventListener('change', () => { flushVar(); varY = Number(varYear.value); renderVar(); });
+  form.amount.addEventListener('input', () =>
+    varInputs.querySelectorAll('input').forEach(inp => inp.placeholder = form.amount.value || '기본'));
 
   function resetForm() {
     editingId = null; form.reset(); syncCycle();
+    formOv = {}; varY = thisYear(); $('#varBox').open = false; renderVar();
     $('#formTitle').textContent = '고정지출 추가';
     $('#submitBtn').textContent = '추가';
     $('#cancelBtn').classList.add('hidden');
@@ -495,6 +568,7 @@
 
   form.addEventListener('submit', e => {
     e.preventDefault();
+    flushVar();
     const d = new FormData(form);
     const rec = {
       name: d.get('name').trim(),
@@ -505,6 +579,7 @@
       day: Number(d.get('day')) || 1,
       memo: d.get('memo').trim(),
     };
+    rec.overrides = rec.cycle === 'monthly' ? cleanOverrides(formOv) : {};
     if (!rec.name) return;
     if (editingId) {
       items = items.map(i => i.id === editingId ? { ...i, ...rec } : i);
@@ -524,6 +599,10 @@
       editingId = it.id;
       for (const k of ['name','category','amount','cycle','month','day','memo']) form[k].value = it[k];
       syncCycle();
+      formOv = { ...(it.overrides || {}) };
+      const yrs = Object.keys(formOv).map(k => Number(k.slice(0, 4)));
+      varY = yrs.length ? Math.max(...yrs) : thisYear();
+      $('#varBox').open = yrs.length > 0; renderVar();
       $('#formTitle').textContent = '고정지출 수정';
       $('#submitBtn').textContent = '저장';
       $('#cancelBtn').classList.remove('hidden');
@@ -552,9 +631,9 @@
     download('fixed-expenses.json', JSON.stringify(items, null, 2), 'application/json');
   $('#exportCsv').onclick = () => {
     const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
-    const head = ['항목','분류','주기','결제월','결제일','금액','월환산','상태','메모'];
+    const head = ['항목','분류','주기','결제월','결제일','기본금액',`${thisYear()}년 월환산`,'상태','메모'];
     const rows = items.map(i => [i.name, i.category, i.cycle === 'monthly' ? '매월' : '매년',
-      i.cycle === 'yearly' ? i.month : '', i.day, i.amount, Math.round(monthlyEq(i)),
+      i.cycle === 'yearly' ? i.month : '', i.day, i.amount, Math.round(monthlyEq(i, thisYear())),
       i.active ? '진행' : '중지', i.memo].map(q).join(','));
     download('fixed-expenses.csv', '﻿' + [head.map(q).join(','), ...rows].join('\n'), 'text/csv');
   };
@@ -562,16 +641,8 @@
   $('#importFile').addEventListener('change', async e => {
     const file = e.target.files[0]; if (!file) return;
     try {
-      const data = JSON.parse(await file.text());
-      if (!Array.isArray(data)) throw new Error('형식 오류');
-      const clean = data.filter(x => x && x.name).map(x => ({
-        id: uid(), name: String(x.name), category: String(x.category || ''),
-        amount: Math.max(0, Number(x.amount) || 0),
-        cycle: x.cycle === 'yearly' ? 'yearly' : 'monthly',
-        month: Math.min(12, Math.max(1, Number(x.month) || 1)),
-        day: Math.min(31, Math.max(1, Number(x.day) || 1)),
-        memo: String(x.memo || ''), active: x.active !== false,
-      }));
+      // 배열 또는 { version, items } 형식을 모두 받는다. 불러온 항목은 새 id를 부여해 기존 항목과 겹치지 않게 한다.
+      const clean = parseItems(JSON.parse(await file.text())).map(x => ({ ...x, id: uid() }));
       if (confirm(`${clean.length}건을 불러옵니다. 기존 데이터를 대체할까요?\n(취소: 기존 데이터에 추가)`))
         items = clean; else items = items.concat(clean);
       save();
@@ -579,7 +650,7 @@
     e.target.value = '';
   });
 
-  syncCycle(); render(); renderStorage(); initFile();
+  syncCycle(); renderVar(); render(); renderStorage(); initFile();
 })();
 </script>
 </body>
