@@ -64,11 +64,23 @@
   .cat-bar .fill{height:100%;background:var(--accent)}
   .cat-bar .amt{width:110px;text-align:right;font-variant-numeric:tabular-nums;flex:none}
   .scroll{overflow-x:auto}
+  .storage{margin-bottom:16px;padding:12px 16px}
+  .storage .note{color:var(--muted);font-size:12px;margin-top:4px}
+  .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:var(--muted)}
+  .dot.ok{background:var(--ok)} .dot.warn{background:#e0a100} .dot.err{background:var(--danger)}
 </style>
 </head>
 <body>
 <div class="wrap">
   <h1>고정지출 관리</h1>
+
+  <div class="card storage" id="storage">
+    <div class="row between">
+      <div><strong>저장 위치</strong> · <span id="storageStatus"></span></div>
+      <div class="row" id="storageBtns"></div>
+    </div>
+    <div class="note" id="storageNote"></div>
+  </div>
 
   <div class="grid cards" id="stats"></div>
 
@@ -178,7 +190,188 @@
   function save() {
     try { localStorage.setItem(KEY, JSON.stringify(items)); } catch {}
     render();
+    // 연결이 정상일 때만 기록한다. 읽기 실패·권한 대기 중에는 원본 파일을 덮어쓰지 않고 dirty 표시만 남긴다.
+    if (fileHandle) { setDirty(true); if (fileState === 'connected') queueWrite(); }
   }
+
+  // ---- 파일 저장 (File System Access API) ------------------------------------
+  // 원본: 사용자가 지정한 JSON 파일 / localStorage: 즉시 표시용 캐시
+  const FS_OK = 'showSaveFilePicker' in window && 'showOpenFilePicker' in window;
+  const DIRTY = 'fixed-expenses.dirty';
+  const PICK = { types: [{ description: 'JSON 파일', accept: { 'application/json': ['.json'] } }] };
+  let fileHandle = null;
+  let fileState = 'none';          // none | connected | needsPermission | error
+  let fileMsg = '', lastSaved = null, timer = null, chain = Promise.resolve();
+
+  const setDirty = v => { try { v ? localStorage.setItem(DIRTY, '1') : localStorage.removeItem(DIRTY); } catch {} };
+  const isDirty = () => { try { return localStorage.getItem(DIRTY) === '1'; } catch { return false; } };
+  const serialize = () => JSON.stringify({ version: 1, items }, null, 2);
+
+  function idb(mode, fn) {
+    return new Promise((res, rej) => {
+      const r = indexedDB.open('fixed-expenses-meta', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('kv');
+      r.onerror = () => rej(r.error);
+      r.onsuccess = () => {
+        const tx = r.result.transaction('kv', mode);
+        const req = fn(tx.objectStore('kv'));
+        tx.oncomplete = () => { r.result.close(); res(req.result); };
+        tx.onerror = () => rej(tx.error);
+      };
+    });
+  }
+  const saveHandle  = h => idb('readwrite', s => s.put(h, 'handle'));
+  const loadHandle  = () => idb('readonly', s => s.get('handle'));
+  const clearHandle = () => idb('readwrite', s => s.delete('handle'));
+
+  function normalize(x) {
+    return {
+      id: typeof x.id === 'string' && x.id ? x.id : uid(),
+      name: String(x.name), category: String(x.category || ''),
+      amount: Math.max(0, Number(x.amount) || 0),
+      cycle: x.cycle === 'yearly' ? 'yearly' : 'monthly',
+      month: Math.min(12, Math.max(1, Number(x.month) || 1)),
+      day: Math.min(31, Math.max(1, Number(x.day) || 1)),
+      memo: String(x.memo || ''), active: x.active !== false,
+    };
+  }
+
+  // 파일 내용을 읽어 항목 배열로 반환. 빈 파일이면 null. 형식 오류면 예외.
+  async function readFile(h) {
+    const text = (await (await h.getFile()).text()).trim();
+    if (!text) return null;
+    const d = JSON.parse(text);
+    const arr = Array.isArray(d) ? d : d && d.items;
+    if (!Array.isArray(arr)) throw new Error('지원하지 않는 파일 형식입니다.');
+    return arr.filter(x => x && x.name).map(normalize);
+  }
+
+  function queueWrite() { clearTimeout(timer); timer = setTimeout(writeFile, 300); }
+
+  function writeFile() {
+    chain = chain.then(async () => {
+      if (!fileHandle) return;
+      try {
+        const w = await fileHandle.createWritable();   // 임시 파일에 쓰고 close() 시 교체
+        await w.write(serialize());
+        await w.close();
+        setDirty(false); fileState = 'connected'; fileMsg = ''; lastSaved = new Date();
+      } catch (e) {
+        fileState = e.name === 'NotAllowedError' ? 'needsPermission' : 'error';
+        fileMsg = e.message || String(e);
+      }
+      renderStorage();
+    });
+    return chain;
+  }
+
+  async function ensurePermission(h) {
+    const opt = { mode: 'readwrite' };
+    if ((await h.queryPermission(opt)) === 'granted') return true;
+    return (await h.requestPermission(opt)) === 'granted';
+  }
+
+  // 핸들을 연결한다. 파일이 비어 있으면 현재 목록을 기록하고, 아니면 파일 내용을 불러온다.
+  async function attach(h, { askReplace }) {
+    let data;
+    try { data = await readFile(h); }
+    catch (e) { alert('파일을 읽을 수 없습니다: ' + e.message); return false; }
+    if (data === null) {
+      fileHandle = h; await saveHandle(h); await writeFile();
+    } else {
+      if (askReplace && items.length && !confirm(`파일의 ${data.length}건으로 현재 목록을 대체할까요?`)) return false;
+      fileHandle = h; await saveHandle(h);
+      items = data; setDirty(false); fileState = 'connected'; lastSaved = new Date();
+      try { localStorage.setItem(KEY, JSON.stringify(items)); } catch {}
+      render();
+    }
+    renderStorage();
+    return true;
+  }
+
+  async function reconnect() {                 // 새로고침 후 권한 재승인
+    const h = fileHandle;
+    if (!(await ensurePermission(h))) return;
+    if (isDirty()) {
+      const useCurrent = confirm('연결이 끊긴 동안 수정한 내용이 있습니다.\n\n확인: 현재 화면 내용으로 파일을 덮어쓰기\n취소: 파일 내용을 불러오기');
+      if (useCurrent) { fileState = 'connected'; await writeFile(); return; }
+    }
+    try {
+      const data = await readFile(h);
+      if (data) { items = data; try { localStorage.setItem(KEY, JSON.stringify(items)); } catch {} render(); }
+      else await writeFile();
+      setDirty(false); fileState = 'connected'; lastSaved = new Date();
+    } catch (e) { fileState = 'error'; fileMsg = e.message; }
+    renderStorage();
+  }
+
+  async function initFile() {
+    if (!FS_OK) return renderStorage();
+    try {
+      const h = await loadHandle();
+      if (h) {
+        fileHandle = h;
+        if ((await h.queryPermission({ mode: 'readwrite' })) === 'granted') await reconnect();
+        else fileState = 'needsPermission';
+      }
+    } catch (e) { fileState = 'error'; fileMsg = e.message; }
+    renderStorage();
+  }
+
+  function renderStorage() {
+    const btn = (a, t, cls = '') => `<button class="small ${cls}" data-fs="${a}">${t}</button>`;
+    let dot = '', text = '', note = '', btns = '';
+    if (!FS_OK) {
+      dot = 'warn'; text = '브라우저에만 저장 중';
+      note = '이 브라우저는 파일 직접 저장을 지원하지 않습니다. Chrome·Edge 등 지원 브라우저를 사용하시거나, 아래 [JSON 내보내기]로 주기적으로 백업해 주세요.';
+    } else if (!fileHandle) {
+      dot = 'warn'; text = '파일 미연결 (브라우저에만 저장 중)';
+      note = '저장할 JSON 파일을 지정하면 변경 사항이 그 파일에 자동 기록됩니다. OneDrive·iCloud Drive 등 동기화 폴더에 두면 백업까지 해결됩니다.';
+      btns = btn('create', '새 파일 만들기', 'primary') + btn('open', '기존 파일 열기');
+    } else if (fileState === 'needsPermission') {
+      dot = 'warn'; text = `${esc(fileHandle.name)} · 접근 허용 필요`;
+      note = '보안상 브라우저를 다시 열면 파일 접근을 한 번 허용해야 합니다. 허용 전 수정 내용은 브라우저에 임시 보관됩니다.';
+      btns = btn('grant', '접근 허용', 'primary') + btn('disconnect', '연결 해제');
+    } else if (fileState === 'error') {
+      dot = 'err'; text = `${esc(fileHandle.name)} · 저장 실패`;
+      note = fileMsg;
+      btns = btn('retry', '다시 저장', 'primary') + btn('disconnect', '연결 해제');
+    } else {
+      dot = 'ok'; text = `${esc(fileHandle.name)} 에 자동 저장 중`;
+      note = lastSaved ? `마지막 저장 ${lastSaved.toLocaleTimeString('ko-KR')}` : '';
+      btns = btn('disconnect', '연결 해제');
+    }
+    $('#storageStatus').innerHTML = `<span class="dot ${dot}"></span>${text}`;
+    $('#storageNote').textContent = note;
+    $('#storageBtns').innerHTML = btns;
+  }
+
+  $('#storageBtns').addEventListener('click', async e => {
+    const b = e.target.closest('button[data-fs]'); if (!b) return;
+    try {
+      switch (b.dataset.fs) {
+        case 'create': {
+          const h = await showSaveFilePicker({ suggestedName: 'fixed-expenses.json', ...PICK });
+          if (await ensurePermission(h)) await attach(h, { askReplace: false });
+          break;
+        }
+        case 'open': {
+          const [h] = await showOpenFilePicker({ multiple: false, ...PICK });
+          if (await ensurePermission(h)) await attach(h, { askReplace: true });
+          break;
+        }
+        case 'grant': await reconnect(); break;
+        case 'retry': fileState = 'connected'; await writeFile(); break;
+        case 'disconnect':
+          if (confirm('파일 연결을 해제할까요? 파일은 삭제되지 않으며, 이후 변경은 브라우저에만 저장됩니다.')) {
+            fileHandle = null; fileState = 'none'; setDirty(false); await clearHandle(); renderStorage();
+          }
+          break;
+      }
+    } catch (err) {
+      if (err.name !== 'AbortError') { fileState = fileHandle ? 'error' : 'none'; fileMsg = err.message; renderStorage(); alert('오류: ' + err.message); }
+    }
+  });
 
   // ---- 계산 -------------------------------------------------------------
   const monthlyEq = it => it.cycle === 'monthly' ? it.amount : it.amount / 12;
@@ -386,7 +579,7 @@
     e.target.value = '';
   });
 
-  syncCycle(); render();
+  syncCycle(); render(); renderStorage(); initFile();
 })();
 </script>
 </body>
