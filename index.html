@@ -161,6 +161,7 @@
   .cmp-fill{flex:none;height:14px;width:calc((100% - 130px) * var(--p));min-width:2px;background:var(--vc-s1);border-radius:0 4px 4px 0}
   .cmp-v{margin-left:8px;white-space:nowrap;font-variant-numeric:tabular-nums}
   @media (max-width:560px){.cmp-row{grid-template-columns:1fr;gap:2px}}
+.mpick{font:inherit;font-size:inherit;font-weight:inherit;color:inherit;background:var(--bg,transparent);border:1px solid var(--line,#ccc);border-radius:6px;padding:1px 4px;margin-right:4px;cursor:pointer}
 </style>
 </head>
 <body>
@@ -822,10 +823,22 @@
     return t;
   }
 
+  // 요약 카드 세 장이 함께 쓰는 '기준 월'. 처음에는 전월이고, 카드의 월 선택으로 올해 1~12월 중에서 바꾼다.
+  // (지금이 1월이면 전월이 지난해 12월이므로 그 달도 목록에 함께 둔다.) 이 선택은 저장하지 않으므로 앱을 다시 열면 전월로 돌아간다.
+  let statYM = null;                                            // 'YYYY-MM' 또는 null(= 전월)
+  function statMonth() {
+    const now = new Date(), pm = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const def = { y: pm.getFullYear(), m: pm.getMonth() + 1 };
+    if (statYM) { const [y, m] = statYM.split('-').map(Number); if (y === def.y || y === now.getFullYear()) return { y, m, def }; }
+    return { y: def.y, m: def.m, def };
+  }
   function renderStats() {
     const a = active();
     const now = new Date(), yr = now.getFullYear();
-    const pm = new Date(yr, now.getMonth() - 1, 1), py = pm.getFullYear(), pmn = pm.getMonth() + 1;     // 전월(1월이면 지난해 12월)
+    const { y: py, m: pmn, def } = statMonth();
+    const ymOpts = [...(def.y < yr ? [[def.y, def.m]] : []), ...Array.from({ length: 12 }, (_, k) => [yr, k + 1])];
+    const pick = `<select class="mpick" data-mpick aria-label="요약 카드의 기준 월">${ymOpts.map(([y, m]) =>
+      `<option value="${y}-${m}"${y === py && m === pmn ? ' selected' : ''}>${y === yr ? '' : y + '년 '}${m}월${y === def.y && m === def.m ? ' (전월)' : ''}</option>`).join('')}</select>`;
     const prev = monthSpend(py, pmn);
     // 전년도 전체 합계와 올해 현재까지 합계 비교
     const last = a.reduce((s, i) => s + annualOf(i, yr - 1), 0), cur = spentSoFar(yr, now);
@@ -834,22 +847,22 @@
     const bars = [[`${yr - 1}년 전체`, last, 'var(--vc-other)'], [`${yr}년 현재까지`, cur, 'var(--vc-s1)']].map(([l, v, c]) =>
       `<div class="r"><span>${esc(l)}</span><span class="b"><i style="width:${(v / mx) * 100}%;background:${c}"></i></span><b>${esc(won(v))}</b></div>`).join('');
     const cards = [
-      { label: '전월 고정지출', spend: 'fixed', value: won(prev.fixed), sub: `${py}년 ${pmn}월 · ${prev.fixedN}건` },
-      { label: '전월 일반지출', spend: 'var', value: won(prev.varSum), sub: `${py}년 ${pmn}월 · ${prev.varN}건` },
-      { label: '전월 종합지출', spend: 'all', value: won(prev.fixed + prev.varSum), sub: `${py}년 ${pmn}월 · 고정 ${prev.fixedN}건 + 일반 ${prev.varN}건` },
+      { label: '고정지출', pick: true, spend: 'fixed', value: won(prev.fixed), sub: `${py}년 ${pmn}월 · ${prev.fixedN}건` },
+      { label: '일반지출', pick: true, spend: 'var', value: won(prev.varSum), sub: `${py}년 ${pmn}월 · ${prev.varN}건` },
+      { label: '종합지출', pick: true, spend: 'all', value: won(prev.fixed + prev.varSum), sub: `${py}년 ${pmn}월 · 고정 ${prev.fixedN}건 + 일반 ${prev.varN}건` },
       { label: '지출 합계 비교 (전년도 ↔ 올해 현재까지)', cls: 'span2', html: `<div class="cmp2">${bars}</div>`,
         sub: `${last > 0 ? `올해 − 전년도 = ${diffText}` : '전년도 기록 없음'} · ${now.getMonth() + 1}월 ${now.getDate()}일 기준` },
     ];
     $('#stats').innerHTML = cards.map(c =>
       `<div class="card stat ${c.cls || ''}${c.spend ? ' clickable' : ''}"${c.spend ? ` data-spend="${c.spend}" role="button" tabindex="0" title="눌러서 ${esc(c.label)} 내역 보기"` : ''}>` +
-      `<div class="label">${esc(c.label)}${c.spend ? '<span class="go">내역 ›</span>' : ''}</div>` +
+      `<div class="label">${c.pick ? pick : ''}${esc(c.label)}${c.spend ? '<span class="go">내역 ›</span>' : ''}</div>` +
       (c.html || `<div class="value">${esc(c.value)}</div>`) + `<div class="sub">${esc(c.sub)}</div></div>`).join('');
   }
 
   // 전월 카드를 누르면 지난달 내역을 창으로 보여 준다. 카드 합계와 같은 계산(monthFixed, monthVar)을 쓰므로 합계가 항상 같다.
   const spDlg = $('#spendDlg');
   function openSpend(kind) {
-    const now = new Date(), pm = new Date(now.getFullYear(), now.getMonth() - 1, 1), y = pm.getFullYear(), m = pm.getMonth() + 1;
+    const { y, m } = statMonth();
     const table = $('#spTable'); table.replaceChildren();
     const label = { fixed: '고정지출', var: '일반지출', all: '종합지출' }[kind];
     $('#spTitle').textContent = `${y}년 ${m}월 ${label} 내역`;
@@ -891,8 +904,15 @@
     $('#spMissing').textContent = f.missing.length ? `이 달 금액이 아직 기록되지 않은 고정 항목: ${f.missing.map(i => i.name).join(', ')} (금액을 입력하면 이 내역에 포함됩니다)` : '';
     if (!spDlg.open) spDlg.showModal();
   }
-  $('#stats').addEventListener('click', e => { const c = e.target.closest('[data-spend]'); if (c) openSpend(c.dataset.spend); });
+  $('#stats').addEventListener('change', e => {
+    const sel = e.target.closest('[data-mpick]'); if (!sel) return;
+    const [y, m] = sel.value.split('-'); statYM = `${y}-${String(m).padStart(2, '0')}`;
+    const idx = [...$('#stats').querySelectorAll('[data-mpick]')].indexOf(sel);
+    renderStats(); const again = $('#stats').querySelectorAll('[data-mpick]')[idx]; if (again) again.focus();   // 다시 그린 뒤에도 키보드 위치를 유지
+  });
+  $('#stats').addEventListener('click', e => { if (e.target.closest('[data-mpick]')) return; const c = e.target.closest('[data-spend]'); if (c) openSpend(c.dataset.spend); });
   $('#stats').addEventListener('keydown', e => {
+    if (e.target.closest('[data-mpick]')) return;
     const c = e.target.closest('[data-spend]');
     if (c && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openSpend(c.dataset.spend); }
   });
