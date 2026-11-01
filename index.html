@@ -239,7 +239,7 @@
       </div>
       <div class="row">
         <button class="small" id="exportJson">JSON 내보내기</button>
-        <button class="small" id="exportCsv">CSV 내보내기</button>
+        <button class="small" id="exportCsv" title="고정지출과 상시지출을 한 줄에 한 번의 지출로 모두 담습니다">CSV 내보내기</button>
         <button class="small" id="importBtn">불러오기</button>
         <input type="file" id="importFile" accept="application/json" class="hidden">
       </div>
@@ -604,7 +604,6 @@
   const annualOf = (it, y = thisYear()) => it.cycle === 'monthly'
     ? Array.from({ length: 12 }, (_, k) => amountIn(it, y, k + 1)).reduce((s, v) => s + v, 0)
     : amountIn(it, y, it.month);
-  const monthlyEq = (it, y = thisYear()) => annualOf(it, y) / 12;
   // 월별 금액을 기록해 쓰는 항목은 기본 금액을 0원으로 두면, 기록이 없는 달을 추정하지 않고 빈 칸(미기록)으로 둔다.
   // (지출 기록에서 환산한 항목은 항상 이 방식이다. 기본 금액이 0보다 크면 지금처럼 그 금액으로 채운다.)
   const hasOv = (it, y, m) => typeof (it.overrides && it.overrides[ymKey(y, m)]) === 'number';
@@ -1196,13 +1195,25 @@
     a.download = name; a.click(); URL.revokeObjectURL(a.href);
   }
   $('#exportJson').onclick = () => download('fixed-expenses.json', serialize(), 'application/json');   // 고정지출 + 지출 기록
+  // CSV: 한 줄에 한 번의 지출. 고정지출은 금액이 있는 달마다, 상시지출은 건마다 한 줄이다.
+  // 금액 열을 더하면 '올해 지출 합계'와 같다(중지한 고정 항목과 기록 없는 달은 앱 계산과 같이 뺀다).
   $('#exportCsv').onclick = () => {
-    const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
-    const head = ['항목','분류','주기','결제월','결제일','기본금액',`${thisYear()}년 월환산`,'상태','메모'];
-    const rows = items.map(i => [i.name, i.category, i.cycle === 'monthly' ? '매월' : '매년',
-      i.cycle === 'yearly' ? i.month : '', i.day || '상시', i.amount, Math.round(monthlyEq(i, thisYear())),
-      i.active ? '진행' : '중지', i.memo].map(q).join(','));
-    download('fixed-expenses.csv', '﻿' + [head.map(q).join(','), ...rows].join('\n'), 'text/csv');
+    const q = v => typeof v === 'number' ? String(v) : `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const ys = new Set([thisYear(), ...records.map(r => Number(r.date.slice(0, 4)))]);
+    for (const it of items) for (const k of Object.keys(it.overrides || {})) ys.add(Number(k.slice(0, 4)));
+    const out = [];
+    for (const it of fixedActive()) for (const y of ys) for (let m = 1; m <= 12; m++) {
+      if (!paidIn(it, m) || isBlank(it, y, m)) continue;
+      const amt = amountIn(it, y, m);
+      if (!(amt > 0) && !hasOv(it, y, m)) continue;
+      const d = dayIn(it, y, m), mm = String(m).padStart(2, '0');
+      out.push([d ? `${y}-${mm}-${String(d).padStart(2, '0')}` : `${y}-${mm}`, '고정지출', it.name, it.category || '', amt, '']);
+    }
+    for (const r of records) out.push([r.date, '상시지출', r.name, r.category || '', r.amount, r.memo || '']);
+    out.sort((x, y) => x[0].localeCompare(y[0]) || x[1].localeCompare(y[1]) || x[2].localeCompare(y[2], 'ko'));
+    const head = ['날짜', '구분', '항목', '분류', '금액', '메모'];
+    // 맨 앞의 \uFEFF는 엑셀에서 한글이 깨지지 않게 하는 표시(BOM)다.
+    download('dodo-budget-expenses.csv', '\uFEFF' + [head, ...out].map(r => r.map(q).join(',')).join('\n'), 'text/csv');
   };
   $('#importBtn').onclick = () => $('#importFile').click();
   $('#importFile').addEventListener('change', async e => {
