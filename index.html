@@ -587,7 +587,7 @@
     try {
       switch (b.dataset.fs) {
         case 'create': {
-          const h = await showSaveFilePicker({ suggestedName: 'fixed-expenses.json', ...PICK });
+          const h = await showSaveFilePicker({ suggestedName: 'dodo-budget.json', ...PICK });
           if (await ensurePermission(h)) await attach(h, { askReplace: false });
           break;
         }
