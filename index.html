@@ -150,12 +150,12 @@
     <div class="row between">
       <h2 id="formTitle" style="margin:0">지출 추가</h2>
       <div class="vc-mode" role="group" aria-label="지출 종류" style="margin-top:0">
-        <button type="button" id="kindFixed" aria-pressed="true">고정지출</button>
-        <button type="button" id="kindVar" aria-pressed="false">상시지출</button>
+        <button type="button" id="kindVar" aria-pressed="true">상시지출</button>
+        <button type="button" id="kindFixed" aria-pressed="false">고정지출</button>
       </div>
     </div>
     <div class="hint" id="kindHint" style="margin:6px 0 12px"></div>
-    <form id="form" class="grid form">
+    <form id="form" class="grid form hidden">
       <label>항목명
         <input name="name" required placeholder="예: 넷플릭스, 자동차보험">
       </label>
@@ -196,7 +196,7 @@
         <button type="button" id="cancelBtn" class="hidden">취소</button>
       </div>
     </form>
-    <form id="recForm" class="grid form hidden">
+    <form id="recForm" class="grid form">
       <label>날짜
         <input name="date" type="date" required>
       </label>
@@ -949,27 +949,24 @@
   form.amount.addEventListener('input', () =>
     varInputs.querySelectorAll('input').forEach(inp => inp.placeholder = Number(form.amount.value) > 0 ? form.amount.value : '미기록'));
 
-  // 맨 위 '지출 추가' 카드: 고정지출 / 상시지출 중 어느 양식을 보여 줄지 고른다. 마지막 선택은 이 브라우저에 기억한다.
+  // 맨 위 '지출 추가' 카드: 상시지출 / 고정지출 중 어느 양식을 보여 줄지 고른다. 열 때마다 상시지출이 먼저 나온다.
   // 항목을 수정하는 동안에는 종류를 바꿀 수 없다(수정 중인 항목이 다른 종류로 바뀌는 것을 막기 위해).
-  const KIND_KEY = 'fixed-expenses.kind';
   const KIND_HINT = {
     fixed: '보험료·통신비·공과금처럼 매달(또는 매년) 정해진 날에 나가는 지출을 등록합니다.',
     var: '주유비·생필품·식료품처럼 날짜와 금액이 그때그때 달라지는 지출을 건별로 입력합니다. 같은 항목명은 월별로 합산되어 달력·그래프·비교에 나타납니다.',
   };
-  let kind = 'fixed';
+  let kind = 'var';
   function lockKind() { $('#kindFixed').disabled = $('#kindVar').disabled = !!(editingId || editingRec); }
-  function setKind(k, remember = true) {
+  function setKind(k) {
     kind = k;
     $('#form').classList.toggle('hidden', k !== 'fixed');
     $('#recForm').classList.toggle('hidden', k !== 'var');
     $('#kindFixed').setAttribute('aria-pressed', String(k === 'fixed'));
     $('#kindVar').setAttribute('aria-pressed', String(k === 'var'));
     $('#kindHint').textContent = KIND_HINT[k];
-    if (remember) { try { localStorage.setItem(KIND_KEY, k); } catch {} }
   }
   $('#kindFixed').onclick = () => setKind('fixed');
   $('#kindVar').onclick = () => setKind('var');
-  try { if (localStorage.getItem(KIND_KEY) === 'var') kind = 'var'; } catch {}
 
   function resetForm() {
     editingId = null; form.reset(); syncCycle();
@@ -1022,7 +1019,7 @@
       $('#formTitle').textContent = '고정지출 수정';
       $('#submitBtn').textContent = '저장';
       $('#cancelBtn').classList.remove('hidden');
-      setKind('fixed', false); lockKind();               // 상시지출 화면을 보고 있었어도 고정지출 양식으로 전환
+      setKind('fixed'); lockKind();               // 상시지출 화면을 보고 있었어도 고정지출 양식으로 전환
       $('#addCard').scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
   });
@@ -1187,7 +1184,7 @@
       $('#formTitle').textContent = '상시지출 수정';
       $('#recSubmit').textContent = '저장';
       $('#recCancel').classList.remove('hidden');
-      setKind('var', false); lockKind();                 // 고정지출 화면을 보고 있었어도 상시지출 양식으로 전환
+      setKind('var'); lockKind();                 // 고정지출 화면을 보고 있었어도 상시지출 양식으로 전환
       $('#addCard').scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
   });
@@ -1223,7 +1220,7 @@
     e.target.value = '';
   });
 
-  syncCycle(); renderVar(); resetRecForm(); setKind(kind, false); setMode(barMode, false); render(); renderStorage(); initFile();
+  syncCycle(); renderVar(); resetRecForm(); setKind(kind); setMode(barMode, false); render(); renderStorage(); initFile();
 })();
 </script>
 </body>
