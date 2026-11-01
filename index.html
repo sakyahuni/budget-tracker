@@ -25,6 +25,12 @@
   .stat .label{color:var(--muted);font-size:13px}
   .stat .value{font-size:22px;font-weight:700;margin-top:2px;font-variant-numeric:tabular-nums}
   .stat .sub{color:var(--muted);font-size:12px;margin-top:2px}
+  .card.span2{grid-column:1 / -1}                      /* 비교 카드는 한 줄 전체를 쓴다 */
+  .cmp2{margin-top:8px;display:grid;gap:6px}
+  .cmp2 .r{display:grid;grid-template-columns:104px 1fr auto;gap:8px;align-items:center;font-size:13px}
+  .cmp2 .b{display:block;height:10px;background:var(--bg);border-radius:5px;overflow:hidden}
+  .cmp2 .b i{display:block;height:100%;min-width:2px;border-radius:0 4px 4px 0}
+  .cmp2 b{font-variant-numeric:tabular-nums}
   .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
   .row.between{justify-content:space-between}
   label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted)}
@@ -69,6 +75,8 @@
   td button{white-space:nowrap}
   .storage{margin-bottom:16px;padding:12px 16px}
   .storage .note{color:var(--muted);font-size:12px;margin-top:4px}
+  .storage .tools{margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
+  .storage .cap{color:var(--muted);font-size:12px}
   .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:var(--muted)}
   .dot.ok{background:var(--ok)} .dot.warn{background:#e0a100} .dot.err{background:var(--danger)}
   details.wide{border:1px dashed var(--line);border-radius:8px;padding:8px 12px}
@@ -139,10 +147,21 @@
 
   <div class="card storage" id="storage">
     <div class="row between">
-      <div><strong>저장 위치</strong> · <span id="storageStatus"></span></div>
+      <div><strong>자동 저장</strong> · <span id="storageStatus"></span></div>
       <div class="row" id="storageBtns"></div>
     </div>
     <div class="note" id="storageNote"></div>
+    <div class="tools">
+      <div class="row between">
+        <div><strong>백업·가져오기</strong> <span class="cap">· 지금 한 번만 파일을 주고받습니다. 파일과 연결되지는 않습니다.</span></div>
+        <div class="row">
+          <button class="small" id="exportJson" title="지금 데이터 전체(고정지출·상시지출)의 사본을 JSON 파일로 내려받습니다. 이후 변경은 반영되지 않는 백업입니다.">백업 내려받기 (JSON)</button>
+          <button class="small" id="exportCsv" title="엑셀에서 분석할 수 있도록 한 줄에 한 번의 지출로 내려받습니다. 다시 가져올 수는 없습니다.">엑셀용 내려받기 (CSV)</button>
+          <button class="small" id="importBtn" title="JSON 파일의 내용을 한 번 읽어 옵니다. 확인창에서 현재 데이터를 대체할지, 덧붙일지 고릅니다.">파일에서 가져오기 (JSON)</button>
+          <input type="file" id="importFile" accept="application/json" class="hidden">
+        </div>
+      </div>
+    </div>
   </div>
 
   <div class="grid cards" id="stats"></div>
@@ -237,12 +256,6 @@
           <option value="monthly">매월</option>
           <option value="yearly">매년</option>
         </select>
-      </div>
-      <div class="row">
-        <button class="small" id="exportJson">JSON 내보내기</button>
-        <button class="small" id="exportCsv" title="고정지출과 상시지출을 한 줄에 한 번의 지출로 모두 담습니다">CSV 내보내기</button>
-        <button class="small" id="importBtn">불러오기</button>
-        <input type="file" id="importFile" accept="application/json" class="hidden">
       </div>
     </div>
     <div class="scroll"><table>
@@ -546,11 +559,11 @@
     let dot = '', text = '', note = '', btns = '';
     if (!FS_OK) {
       dot = 'warn'; text = '브라우저에만 저장 중';
-      note = '이 브라우저는 파일 직접 저장을 지원하지 않습니다. Chrome·Edge 등 지원 브라우저를 사용하시거나, 아래 [JSON 내보내기]로 주기적으로 백업해 주세요.';
+      note = '이 브라우저는 파일 직접 저장을 지원하지 않습니다. Chrome·Edge 등 지원 브라우저를 사용하시거나, 아래 [백업 내려받기 (JSON)]으로 주기적으로 백업해 주세요.';
     } else if (!fileHandle) {
       dot = 'warn'; text = '파일 미연결 (브라우저에만 저장 중)';
-      note = '저장할 JSON 파일을 지정하면 변경 사항이 그 파일에 자동 기록됩니다. OneDrive·iCloud Drive 등 동기화 폴더에 두면 백업까지 해결됩니다.';
-      btns = btn('create', '새 파일 만들기', 'primary') + btn('open', '기존 파일 열기');
+      note = '파일을 연결해 두면 이후 입력하는 내용이 그 JSON 파일에 자동으로 저장됩니다. OneDrive·iCloud Drive 등 동기화 폴더에 두면 백업까지 해결됩니다.';
+      btns = btn('create', '새 파일 만들어 연결', 'primary') + btn('open', '기존 파일 열어 연결');
     } else if (fileState === 'needsPermission') {
       dot = 'warn'; text = `${esc(fileHandle.name)} · 접근 허용 필요`;
       note = '보안상 브라우저를 다시 열면 파일 접근을 한 번 허용해야 합니다. 허용 전 수정 내용은 브라우저에 임시 보관됩니다.';
@@ -648,21 +661,59 @@
     renderStats(); renderList(); renderRecords(); renderCalendar(); renderCompare(); renderCategory(); renderCats();
   }
 
+  // ---- 요약 카드 ----------------------------------------------------------
+  const pad2 = n => String(n).padStart(2, '0');
+  const isoDate = d => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+
+  // y년 m월에 나간 지출: 고정 항목은 그 달 금액(기록 없는 달·0원은 제외), 상시지출은 그 달 날짜의 건.
+  function monthSpend(y, m) {
+    let fixed = 0, fixedN = 0, varSum = 0, varN = 0;
+    for (const it of fixedActive()) {
+      if (!paidIn(it, m) || isBlank(it, y, m)) continue;
+      const amt = amountIn(it, y, m);
+      if (amt > 0) { fixed += amt; fixedN++; }
+    }
+    for (const r of records) if (r.date.startsWith(`${y}-${pad2(m)}-`)) { varSum += r.amount; varN++; }
+    return { fixed, fixedN, varSum, varN };
+  }
+
+  // y년 1월 1일부터 오늘까지 실제로 지출된 금액. 고정 항목은 그 달 결제일이 오늘 이전인 달만,
+  // 상시지출은 날짜가 오늘 이전인 건만 더한다(미리 입력해 둔 앞날의 금액은 넣지 않는다).
+  function spentSoFar(y, now) {
+    const t0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    let t = 0;
+    for (const it of fixedActive()) for (let m = 1; m <= 12; m++) {
+      if (!paidIn(it, m) || isBlank(it, y, m)) continue;
+      if (new Date(y, m - 1, dayIn(it, y, m) || 1) > t0) continue;
+      t += amountIn(it, y, m);
+    }
+    for (const r of records) if (r.date.startsWith(`${y}-`) && r.date <= isoDate(t0)) t += r.amount;
+    return t;
+  }
+
   function renderStats() {
-    const a = active(), fx = fixedActive();     // 합계에는 지출 기록까지, '고정지출' 카드에는 고정 항목만
-    const fxM = fx.filter(i => i.cycle === 'monthly');                        // 모든 항목을 최근 기록 금액으로 합산
-    const fxY = fx.filter(i => i.cycle === 'yearly');
-    const mSum = fxM.reduce((s, i) => s + latestAmount(i), 0);
-    const ySum = fxY.reduce((s, i) => s + latestAmount(i), 0);
-    const yr = thisYear();
-    const annual = a.reduce((s, i) => s + annualOf(i, yr), 0);
+    const a = active(), fx = fixedActive();
+    const ySum = fx.filter(i => i.cycle === 'yearly').reduce((s, i) => s + latestAmount(i), 0);
+    const yN = fx.filter(i => i.cycle === 'yearly').length;
+    const now = new Date(), yr = now.getFullYear();
+    const pm = new Date(yr, now.getMonth() - 1, 1), py = pm.getFullYear(), pmn = pm.getMonth() + 1;     // 전월(1월이면 지난해 12월)
+    const prev = monthSpend(py, pmn);
+    // 전년도 전체 합계와 올해 현재까지 합계 비교
+    const last = a.reduce((s, i) => s + annualOf(i, yr - 1), 0), cur = spentSoFar(yr, now);
+    const mx = Math.max(last, cur, 1), diff = cur - last, sign = diff >= 0 ? '+' : '−';
+    const diffText = last > 0 ? `${sign}${won(Math.abs(diff))} (${sign}${Math.abs(Math.round(diff / last * 100))}%)` : '전년도 기록 없음';
+    const bars = [[`${yr - 1}년 전체`, last, 'var(--vc-other)'], [`${yr}년 현재까지`, cur, 'var(--vc-s1)']].map(([l, v, c]) =>
+      `<div class="r"><span>${esc(l)}</span><span class="b"><i style="width:${(v / mx) * 100}%;background:${c}"></i></span><b>${esc(won(v))}</b></div>`).join('');
     const cards = [
-      ['매월 고정지출', won(mSum), `${fxM.length}건 · 최근 기록 금액 기준`],
-      ['연간 고정지출(매년 결제분)', won(ySum), `${fxY.length}건`],
-      ['올해 지출 합계', won(annual), `${yr}년 · 기록된 금액 + 고정 금액`],
+      { label: '전월 고정지출', value: won(prev.fixed), sub: `${py}년 ${pmn}월 · ${prev.fixedN}건` },
+      { label: '전월 상시지출', value: won(prev.varSum), sub: `${py}년 ${pmn}월 · ${prev.varN}건` },
+      { label: '연간 고정지출(매년 결제분)', value: won(ySum), sub: `${yN}건` },
+      { label: '지출 합계 비교 (전년도 ↔ 올해 현재까지)', cls: 'span2', html: `<div class="cmp2">${bars}</div>`,
+        sub: `${last > 0 ? `올해 − 전년도 = ${diffText}` : '전년도 기록 없음'} · ${now.getMonth() + 1}월 ${now.getDate()}일 기준` },
     ];
-    $('#stats').innerHTML = cards.map(([l, v, s]) =>
-      `<div class="card stat"><div class="label">${esc(l)}</div><div class="value">${esc(v)}</div><div class="sub">${esc(s)}</div></div>`).join('');
+    $('#stats').innerHTML = cards.map(c =>
+      `<div class="card stat ${c.cls || ''}"><div class="label">${esc(c.label)}</div>` +
+      (c.html || `<div class="value">${esc(c.value)}</div>`) + `<div class="sub">${esc(c.sub)}</div></div>`).join('');
   }
 
   function renderList() {
@@ -1281,7 +1332,7 @@
       // 배열 또는 { version, items } 형식을 모두 받는다. 불러온 항목은 새 id를 부여해 기존 항목과 겹치지 않게 한다.
       const data = parseData(JSON.parse(await file.text()));
       const cleanItems = data.items.map(x => ({ ...x, id: uid() })), cleanRecs = data.records.map(x => ({ ...x, id: uid() }));
-      if (confirm(`고정지출 ${cleanItems.length}건·상시지출 ${cleanRecs.length}건을 불러옵니다. 기존 데이터를 대체할까요?\n(취소: 기존 데이터에 추가)`)) {
+      if (confirm(`고정지출 ${cleanItems.length}건·상시지출 ${cleanRecs.length}건을 가져옵니다.\n\n확인: 현재 데이터를 이 파일의 내용으로 대체\n취소: 현재 데이터에 덧붙이기`)) {
         items = cleanItems;
         if (data.hasRecords) records = cleanRecs;       // 기록이 없는 옛 형식 파일로는 기존 지출 기록을 지우지 않는다
       } else { items = items.concat(cleanItems); records = records.concat(cleanRecs); }
