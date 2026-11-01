@@ -105,6 +105,18 @@
   .vc-empty{color:var(--muted);text-align:center;padding:40px 0}
   details.vc-tbl{margin-top:8px;font-size:13px}
   details.vc-tbl summary{cursor:pointer;color:var(--muted)}
+  .vc-mode{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-top:8px}
+  .vc-mode button{border:none;border-radius:0;background:none;padding:4px 12px;font-size:13px;color:var(--muted)}
+  .vc-mode button[aria-pressed=true]{background:var(--accent-weak);color:var(--accent);font-weight:600}
+  /* 항목별 비교: 연간 금액 순위 가로 막대 (한 가지 색) */
+  .cmp-row{display:grid;grid-template-columns:170px 1fr;gap:8px;align-items:center;padding:6px 4px;border-radius:6px;outline:none}
+  .cmp-row:hover,.cmp-row:focus-visible{background:var(--bg)}
+  .cmp-row:focus-visible{box-shadow:inset 0 0 0 2px var(--text)}
+  .cmp-name{min-width:0;overflow-wrap:anywhere}
+  .cmp-track{display:flex;align-items:center;min-width:0}
+  .cmp-fill{flex:none;height:14px;width:calc((100% - 130px) * var(--p));min-width:2px;background:var(--vc-s1);border-radius:0 4px 4px 0}
+  .cmp-v{margin-left:8px;white-space:nowrap;font-variant-numeric:tabular-nums}
+  @media (max-width:560px){.cmp-row{grid-template-columns:1fr;gap:2px}}
 </style>
 </head>
 <body>
@@ -170,6 +182,7 @@
     <button class="active" data-tab="list">목록</button>
     <button data-tab="calendar">연간 달력</button>
     <button data-tab="category">분류별</button>
+    <button data-tab="compare">항목별 비교</button>
   </div>
 
   <section id="tab-list" class="card">
@@ -209,7 +222,11 @@
     </div>
     <div class="vc-box">
       <h3 id="barTitle"></h3>
-      <div class="hint">막대의 색은 항목, 전체 높이는 그달의 합계입니다. 기록이 없는 달은 기본 금액 기준입니다. 막대에 마우스를 올리거나 키보드로 이동하면 항목별 금액이 보입니다.</div>
+      <div class="hint">막대의 색은 선택한 기준(항목 또는 분류), 전체 높이는 그달의 합계입니다. 기록이 없는 달은 기본 금액 기준입니다. 막대에 마우스를 올리거나 키보드로 이동하면 금액이 보입니다.</div>
+      <div class="vc-mode" role="group" aria-label="색 구분 기준">
+        <button type="button" id="modeItem" aria-pressed="true">항목별</button>
+        <button type="button" id="modeCat" aria-pressed="false">분류별</button>
+      </div>
       <div class="vc-legend" id="barLegend"></div>
       <div id="barChart" role="group" aria-label="월별 지출을 항목별 색으로 나눈 누적 막대 그래프"></div>
       <details class="vc-tbl">
@@ -223,6 +240,23 @@
   <section id="tab-category" class="card hidden">
     <h2 id="catTitle">분류별 연간 지출</h2>
     <div id="catChart"></div>
+  </section>
+
+  <section id="tab-compare" class="card hidden">
+    <div class="row between" style="margin-bottom:12px">
+      <h2 style="margin:0" id="cmpTitle"></h2>
+      <div class="row">
+        <button class="small" id="prevYear2">◀</button>
+        <button class="small" id="thisYear2">올해</button>
+        <button class="small" id="nextYear2">▶</button>
+      </div>
+    </div>
+    <div class="hint">항목별 연간 지출을 큰 순서로 비교합니다. 월 평균은 연간 금액을 12로 나눈 값이며, 금액이 0원인 항목은 표시하지 않습니다.</div>
+    <div id="cmpChart" role="group" aria-label="항목별 연간 지출 비교 막대 그래프"></div>
+    <details class="vc-tbl">
+      <summary>표로 보기</summary>
+      <div class="scroll"><table id="cmpTable"></table></div>
+    </details>
   </section>
 </div>
 
@@ -483,7 +517,7 @@
 
   // ---- 렌더링 -----------------------------------------------------------
   function render() {
-    renderStats(); renderList(); renderCalendar(); renderCategory(); renderCats();
+    renderStats(); renderList(); renderCalendar(); renderCompare(); renderCategory(); renderCats();
   }
 
   function renderStats() {
@@ -566,12 +600,22 @@
 
   // 그래프에 쓸 계열을 정한다. 올해 연간 금액이 큰 항목 6개는 각자 색을 받고, 나머지는 회색 '기타'로 묶는다.
   // 색은 순위가 아니라 항목 목록의 순서로 배정하므로, 연도를 넘겨도 같은 항목은 같은 색을 유지한다.
+  // 색을 나누는 기준: 'item'(항목별) 또는 'cat'(분류별). 분류가 비어 있는 항목은 '미분류'로 본다.
   const SERIES_MAX = 6;
+  let barMode = 'item';
+  const keyOf = i => barMode === 'cat' ? (i.category || '미분류') : i.id;
+  const labelOf = i => barMode === 'cat' ? (i.category || '미분류') : i.name;
+  const unitOf = () => barMode === 'cat' ? '개 분류' : '건';
   function chartSeries() {
-    const ranked = active().map(i => ({ i, y: annualOf(i, thisYear()) })).filter(x => x.y > 0).sort((a, b) => b.y - a.y);
-    const shown = (ranked.length <= SERIES_MAX ? ranked : ranked.slice(0, SERIES_MAX)).map(x => x.i)
-      .sort((a, b) => items.indexOf(a) - items.indexOf(b));
-    return { shown, slot: new Map(shown.map((it, k) => [it.id, k])) };
+    const sums = new Map();                                       // 기준 키 -> { key, name, y, order }
+    items.forEach((i, idx) => {
+      if (!i.active) return;
+      const k = keyOf(i), cur = sums.get(k) || { key: k, name: labelOf(i), y: 0, order: idx };
+      cur.y += annualOf(i, thisYear()); sums.set(k, cur);
+    });
+    const ranked = [...sums.values()].filter(x => x.y > 0).sort((a, b) => b.y - a.y);
+    const shown = (ranked.length <= SERIES_MAX ? ranked : ranked.slice(0, SERIES_MAX)).sort((a, b) => a.order - b.order);
+    return { shown, slot: new Map(shown.map((s, k) => [s.key, k])) };
   }
 
   function renderBars() {
@@ -589,10 +633,10 @@
         if (!paidIn(i, m)) continue;
         const amt = amountIn(i, calYear, m);
         if (!(amt > 0)) continue;
-        const s = slot.has(i.id) ? slot.get(i.id) : OTHER, cur = by.get(s) || { amt: 0, n: 0 };
-        cur.amt += amt; cur.n++; by.set(s, cur);
+        const k = keyOf(i), s = slot.has(k) ? slot.get(k) : OTHER, cur = by.get(s) || { amt: 0, keys: new Set() };
+        cur.amt += amt; cur.keys.add(k); by.set(s, cur);
       }
-      const segs = [...by].map(([s, v]) => ({ s, amt: v.amt, n: v.n })).sort((a, b) => a.s - b.s);
+      const segs = [...by].map(([s, v]) => ({ s, amt: v.amt, n: v.keys.size })).sort((a, b) => a.s - b.s);
       return { m, segs, total: segs.reduce((t, x) => t + x.amt, 0) };
     });
     const yearTotal = data.reduce((s, d) => s + d.total, 0);
@@ -600,8 +644,8 @@
 
     // 이 연도에 실제로 나타나는 계열만 범례·표에 올린다
     const present = [...new Set(data.flatMap(d => d.segs.map(x => x.s)))].sort((a, b) => a - b);
-    const otherNames = active().filter(i => !slot.has(i.id) && annualOf(i, calYear) > 0).map(i => i.name);
-    const nameOf = s => s === OTHER ? `기타(${otherNames.length}건)` : shown[s].name;
+    const otherNames = [...new Set(active().filter(i => !slot.has(keyOf(i)) && annualOf(i, calYear) > 0).map(labelOf))];
+    const nameOf = s => s === OTHER ? `기타(${otherNames.length}${unitOf()})` : shown[s].name;
     for (const s of present) {
       const li = mk('span'), sw = mk('i', 'vc-sw'); sw.style.background = colorOf(s);
       li.append(sw, document.createTextNode(nameOf(s)));
@@ -641,7 +685,7 @@
       for (const x of d.segs.slice().sort((a, b) => b.amt - a.amt)) {
         const row = mk('div', 'r'), key = mk('span', 'k'), line = mk('i');
         line.style.background = colorOf(x.s);
-        key.append(line, document.createTextNode(x.s === OTHER ? `기타 ${x.n}건` : shown[x.s].name));
+        key.append(line, document.createTextNode(x.s === OTHER ? `기타 ${x.n}${unitOf()}` : shown[x.s].name));
         row.append(key, mk('span', '', won(x.amt))); tip.append(row);
       }
       tip.style.left = '0px'; tip.style.top = '0px'; tip.style.display = 'block';   // 이전 위치가 폭 계산에 영향을 주지 않게 먼저 초기화
@@ -674,6 +718,61 @@
       cols.append(col);
     });
     area.append(cols); plot.append(area, tip); root.append(plot);
+  }
+
+  // ---- 항목별 비교: 선택한 연도의 연간 지출을 큰 순서로 ----------------------------
+  function renderCompare() {
+    const root = $('#cmpChart'), table = $('#cmpTable');
+    root.replaceChildren(); table.replaceChildren();
+    const rows = active().map(i => ({ i, y: annualOf(i, calYear) })).filter(x => x.y > 0).sort((a, b) => b.y - a.y);
+    const total = rows.reduce((s, x) => s + x.y, 0);
+    $('#cmpTitle').textContent = `${calYear}년 항목별 연간 지출 비교 · 합계 ${won(total)}`;
+
+    // 표 보기 (그래프의 모든 값에 접근하는 경로)
+    const head = mk('tr');
+    ['순위', '항목', '분류'].forEach(t => head.append(mk('th', '', t)));
+    ['연간', '월 평균', '비중'].forEach(t => head.append(mk('th', 'num', t)));
+    const thead = mk('thead'); thead.append(head); table.append(thead);
+    const tb = mk('tbody');
+    rows.forEach((x, idx) => {
+      const tr = mk('tr');
+      tr.append(mk('td', '', String(idx + 1)), mk('td', '', x.i.name), mk('td', '', x.i.category || '미분류'),
+        mk('td', 'num', won(x.y)), mk('td', 'num', won(x.y / 12)), mk('td', 'num', `${Math.round((x.y / total) * 100)}%`));
+      tb.append(tr);
+    });
+    table.append(tb);
+
+    if (!rows.length) { root.append(mk('div', 'vc-empty', '표시할 지출이 없습니다.')); return; }
+    root.style.position = 'relative';
+    const tip = mk('div', 'vc-tip'), max = rows[0].y;
+    const showTip = (row, x, idx) => {
+      tip.replaceChildren(mk('div', 'h', `${idx + 1}위 · ${x.i.category || '미분류'}`), mk('div', 'v', x.i.name));
+      for (const [k, v] of [['연간', won(x.y)], ['월 평균', won(x.y / 12)], ['전체 대비', `${Math.round((x.y / total) * 100)}%`]]) {
+        const r = mk('div', 'r'); r.append(mk('span', '', k), mk('span', '', v)); tip.append(r);
+      }
+      tip.style.left = '0px'; tip.style.top = '0px'; tip.style.display = 'block';
+      const left = Math.max(0, Math.min(root.clientWidth - tip.offsetWidth, root.clientWidth * 0.3));
+      // 기본은 행 아래. 그래프 아래로 넘치면 행 위에 띄운다.
+      const below = row.offsetTop + row.offsetHeight + 4, above = row.offsetTop - tip.offsetHeight - 4;
+      tip.style.left = `${left}px`;
+      tip.style.top = `${below + tip.offsetHeight > root.clientHeight && above >= 0 ? above : below}px`;
+    };
+    rows.forEach((x, idx) => {
+      const row = mk('div', 'cmp-row'); row.tabIndex = 0;
+      row.setAttribute('aria-label', `${idx + 1}위 ${x.i.name} 연간 ${won(x.y)}`);
+      const nm = mk('div', 'cmp-name'); nm.append(mk('div', '', x.i.name));
+      if (x.i.category) nm.append(mk('div', 'hint', x.i.category));
+      const track = mk('div', 'cmp-track'), fill = mk('div', 'cmp-fill'), v = mk('div', 'cmp-v');
+      fill.style.setProperty('--p', x.y / max);
+      v.append(mk('div', '', won(x.y)), mk('div', 'hint', `월 ${won(x.y / 12)}`));
+      track.append(fill, v); row.append(nm, track);
+      row.addEventListener('pointerenter', () => showTip(row, x, idx));
+      row.addEventListener('focus', () => showTip(row, x, idx));
+      row.addEventListener('pointerleave', () => { tip.style.display = 'none'; });
+      row.addEventListener('blur', () => { tip.style.display = 'none'; });
+      root.append(row);
+    });
+    root.append(tip);
   }
 
   function renderCategory() {
@@ -789,13 +888,30 @@
   // ---- 탭 / 필터 / 연도 ---------------------------------------------------
   document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => {
     document.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('active', x === b));
-    for (const t of ['list', 'calendar', 'category'])
+    for (const t of ['list', 'calendar', 'category', 'compare'])
       $('#tab-' + t).classList.toggle('hidden', t !== b.dataset.tab);
   }));
   $('#filterCycle').addEventListener('change', renderList);
-  $('#prevYear').onclick = () => { calYear--; renderCalendar(); };
-  $('#nextYear').onclick = () => { calYear++; renderCalendar(); };
-  $('#thisYear').onclick = () => { calYear = new Date().getFullYear(); renderCalendar(); };
+  // 연도 이동 버튼은 연간 달력과 항목별 비교 탭이 같은 연도(calYear)를 공유한다.
+  const setYear = y => { calYear = y; renderCalendar(); renderCompare(); };
+  for (const sfx of ['', '2']) {
+    $('#prevYear' + sfx).onclick = () => setYear(calYear - 1);
+    $('#nextYear' + sfx).onclick = () => setYear(calYear + 1);
+    $('#thisYear' + sfx).onclick = () => setYear(thisYear());
+  }
+
+  // 월별 막대 그래프의 색 구분 기준(항목별/분류별). 마지막 선택은 이 브라우저에 기억한다.
+  const MODE_KEY = 'fixed-expenses.barmode';
+  const setMode = (m, remember = true) => {
+    barMode = m;
+    $('#modeItem').setAttribute('aria-pressed', String(m === 'item'));
+    $('#modeCat').setAttribute('aria-pressed', String(m === 'cat'));
+    if (remember) { try { localStorage.setItem(MODE_KEY, m); } catch {} }
+    renderBars();
+  };
+  $('#modeItem').onclick = () => setMode('item');
+  $('#modeCat').onclick = () => setMode('cat');
+  try { if (localStorage.getItem(MODE_KEY) === 'cat') { barMode = 'cat'; } } catch {}
 
   // ---- 내보내기 / 불러오기 -------------------------------------------------
   function download(name, text, type) {
@@ -826,7 +942,7 @@
     e.target.value = '';
   });
 
-  syncCycle(); renderVar(); render(); renderStorage(); initFile();
+  syncCycle(); renderVar(); setMode(barMode, false); render(); renderStorage(); initFile();
 })();
 </script>
 </body>
