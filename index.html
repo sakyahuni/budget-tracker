@@ -281,14 +281,14 @@
   </div>
 
   <div class="tabs" role="tablist">
-    <button class="active" data-tab="list">고정지출 목록</button>
-    <button data-tab="records">일반지출 목록</button>
+    <button class="active" data-tab="records">일반지출 목록</button>
+    <button data-tab="list">고정지출 목록</button>
     <button data-tab="calendar">연간 달력</button>
     <button data-tab="category">분류별</button>
     <button data-tab="compare">항목별 비교</button>
   </div>
 
-  <section id="tab-list" class="card">
+  <section id="tab-list" class="card hidden">
     <div class="row between" style="margin-bottom:8px">
       <div class="row">
         <select id="filterCycle" aria-label="주기 필터">
@@ -310,7 +310,7 @@
     <div id="emptyMsg" class="empty hidden">등록된 고정지출이 없습니다. 위 '지출 추가'에서 추가해 주세요.</div>
   </section>
 
-  <section id="tab-records" class="card hidden">
+  <section id="tab-records" class="card">
     <div class="hint" style="margin-bottom:8px">주유비·생필품·식료품처럼 날짜와 금액이 그때그때 달라지는 지출입니다. 위의 '지출 추가'에서 종류를 '일반지출'로 골라 입력하세요. 같은 항목명은 월별로 합산되어 달력·그래프·비교에 함께 나타납니다.</div>
     <div class="row between" style="margin:16px 0 8px">
       <div class="row">
