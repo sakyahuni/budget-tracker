@@ -1234,8 +1234,9 @@
     $('#kindVar').setAttribute('aria-pressed', String(k === 'var'));
     $('#kindHint').textContent = KIND_HINT[k];
   }
-  $('#kindFixed').onclick = () => setKind('fixed');
-  $('#kindVar').onclick = () => setKind('var');
+  // 사용자가 종류 단추를 누르면 아래 목록 탭도 같은 종류로 바꾼다(고정지출 ↔ 일반지출 목록).
+  $('#kindFixed').onclick = () => { setKind('fixed'); showTab('list'); };
+  $('#kindVar').onclick = () => { setKind('var'); showTab('records'); };
 
   function resetForm() {
     editingId = null; form.reset(); syncCycle();
@@ -1294,11 +1295,12 @@
   });
 
   // ---- 탭 / 필터 / 연도 ---------------------------------------------------
-  document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => {
-    document.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('active', x === b));
+  function showTab(name) {
+    document.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('active', x.dataset.tab === name));
     for (const t of ['list', 'records', 'calendar', 'category', 'compare'])
-      $('#tab-' + t).classList.toggle('hidden', t !== b.dataset.tab);
-  }));
+      $('#tab-' + t).classList.toggle('hidden', t !== name);
+  }
+  document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
   $('#filterCycle').addEventListener('change', renderList);
   // 연도 이동 버튼은 연간 달력과 항목별 비교 탭이 같은 연도(calYear)를 공유한다.
   const setYear = y => { calYear = y; renderCalendar(); renderCompare(); };
