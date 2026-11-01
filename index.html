@@ -142,8 +142,12 @@
   #csvDlg legend{font-size:12px;color:var(--muted);padding:0 4px}
   #csvDlg label.inl{display:inline-flex;flex-direction:row;align-items:center;gap:6px;color:var(--text);font-size:13px;margin:2px 12px 2px 0;flex-wrap:wrap}
   #csvDlg .cap{color:var(--muted);font-size:12px}
-  #dtTable{min-width:0;font-size:13px}
-  #dtTable th,#dtTable td{white-space:nowrap;padding:8px 6px}
+  #dtTable,#spTable{min-width:0;font-size:13px}
+  #dtTable th,#dtTable td,#spTable th,#spTable td{white-space:nowrap;padding:8px 6px}
+  .stat.clickable{cursor:pointer}
+  .stat.clickable:hover{border-color:var(--accent)}
+  .stat.clickable:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .stat .go{float:right;font-size:12px;color:var(--accent)}
   .vc-mode{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-top:8px}
   .vc-mode button{border:none;border-radius:0;background:none;padding:4px 12px;font-size:13px;color:var(--muted)}
   .vc-mode button[aria-pressed=true]{background:var(--accent-weak);color:var(--accent);font-weight:600}
@@ -185,7 +189,7 @@
       <div class="row between">
         <div><strong>백업·가져오기</strong> <span class="cap">· 지금 한 번만 파일을 주고받습니다. 파일과 연결되지는 않습니다.</span></div>
         <div class="row">
-          <button class="small" id="exportJson" title="지금 데이터 전체(고정지출·상시지출)의 사본을 JSON 파일로 내려받습니다. 이후 변경은 반영되지 않는 백업입니다.">백업 내려받기 (JSON)</button>
+          <button class="small" id="exportJson" title="지금 데이터 전체(고정지출·일반지출)의 사본을 JSON 파일로 내려받습니다. 이후 변경은 반영되지 않는 백업입니다.">백업 내려받기 (JSON)</button>
           <button class="small" id="exportCsv" title="엑셀에서 분석할 수 있도록 한 줄에 한 번의 지출로 내려받습니다. 다시 가져올 수는 없습니다.">엑셀용 내려받기 (CSV)</button>
           <button class="small" id="importBtn" title="JSON 파일의 내용을 한 번 읽어 옵니다. 확인창에서 현재 데이터를 대체할지, 덧붙일지 고릅니다.">파일에서 가져오기 (JSON)</button>
           <button class="small" id="csvImportBtn" title="은행·요금 조회에서 받은 CSV(예: 주유 거래내역, 요금 고지 내역)를 열을 골라 가져옵니다.">표(CSV)에서 가져오기</button>
@@ -206,7 +210,7 @@
     <div class="row between">
       <h2 id="formTitle" style="margin:0">지출 추가</h2>
       <div class="vc-mode" role="group" aria-label="지출 종류" style="margin-top:0">
-        <button type="button" id="kindVar" aria-pressed="true">상시지출</button>
+        <button type="button" id="kindVar" aria-pressed="true">일반지출</button>
         <button type="button" id="kindFixed" aria-pressed="false">고정지출</button>
       </div>
     </div>
@@ -261,7 +265,7 @@
         <datalist id="recNames"></datalist>
       </label>
       <label>분류
-        <input name="category" list="cats" placeholder="예: 상시 지출">
+        <input name="category" list="cats" placeholder="예: 일반 지출">
       </label>
       <label>금액(원)
         <input name="amount" type="number" min="0" step="1" required inputmode="numeric">
@@ -278,7 +282,7 @@
 
   <div class="tabs" role="tablist">
     <button class="active" data-tab="list">고정지출 목록</button>
-    <button data-tab="records">상시지출 목록</button>
+    <button data-tab="records">일반지출 목록</button>
     <button data-tab="calendar">연간 달력</button>
     <button data-tab="category">분류별</button>
     <button data-tab="compare">항목별 비교</button>
@@ -307,7 +311,7 @@
   </section>
 
   <section id="tab-records" class="card hidden">
-    <div class="hint" style="margin-bottom:8px">주유비·생필품·식료품처럼 날짜와 금액이 그때그때 달라지는 지출입니다. 위의 '지출 추가'에서 종류를 '상시지출'로 골라 입력하세요. 같은 항목명은 월별로 합산되어 달력·그래프·비교에 함께 나타납니다.</div>
+    <div class="hint" style="margin-bottom:8px">주유비·생필품·식료품처럼 날짜와 금액이 그때그때 달라지는 지출입니다. 위의 '지출 추가'에서 종류를 '일반지출'로 골라 입력하세요. 같은 항목명은 월별로 합산되어 달력·그래프·비교에 함께 나타납니다.</div>
     <div class="row between" style="margin:16px 0 8px">
       <div class="row">
         <label style="flex-direction:row;align-items:center;gap:8px">조회 월
@@ -323,7 +327,7 @@
       <thead><tr><th>날짜</th><th>항목</th><th>분류</th><th>메모</th><th class="num">금액</th><th></th></tr></thead>
       <tbody id="recBody"></tbody>
     </table></div>
-    <div id="recEmpty" class="empty hidden">조회한 기간에 입력한 상시지출이 없습니다.</div>
+    <div id="recEmpty" class="empty hidden">조회한 기간에 입력한 일반지출이 없습니다.</div>
   </section>
 
   <section id="tab-calendar" class="card hidden">
@@ -375,6 +379,19 @@
   </section>
 </div>
 
+<dialog id="spendDlg" aria-labelledby="spTitle">
+  <div class="dt-body">
+    <div class="row between">
+      <h2 id="spTitle" style="margin:0"></h2>
+      <button type="button" class="small" id="spClose">닫기</button>
+    </div>
+    <div class="hint" id="spMeta" style="margin-top:4px"></div>
+    <div class="scroll" style="margin-top:8px"><table id="spTable"></table></div>
+    <div class="hint" id="spSummary" style="margin-top:8px"></div>
+    <div class="hint" id="spMissing" style="margin-top:4px"></div>
+  </div>
+</dialog>
+
 <dialog id="detail" aria-labelledby="dtTitle">
   <div class="dt-body">
     <div class="row between">
@@ -408,7 +425,7 @@
     <div class="csvgrid" style="margin-top:12px">
       <fieldset class="wide">
         <legend>가져올 곳</legend>
-        <label class="inl"><input type="radio" name="csvTarget" value="rec" checked> 상시지출(건별) <span class="cap">주유 거래내역처럼 날짜별 지출</span></label>
+        <label class="inl"><input type="radio" name="csvTarget" value="rec" checked> 일반지출(건별) <span class="cap">주유 거래내역처럼 날짜별 지출</span></label>
         <label class="inl"><input type="radio" name="csvTarget" value="fix"> 고정지출의 월별 금액 <span class="cap">가스·전기·통신 요금 고지 내역</span></label>
       </fieldset>
 
@@ -416,7 +433,7 @@
       <label>금액 열 <select id="csvAmt"></select></label>
 
       <fieldset class="wide" id="csvRecBox">
-        <legend>상시지출 설정</legend>
+        <legend>일반지출 설정</legend>
         <div class="csvgrid">
           <div class="wide">
             <label class="inl"><input type="radio" name="csvNameMode" value="col" checked> 항목명을 열에서 가져오기 <select id="csvNameCol"></select></label>
@@ -449,7 +466,7 @@
 
       <div class="wide">
         <label class="inl"><input type="checkbox" id="csvAbs" checked> 금액의 부호(−)는 무시하고 양수로 가져오기</label>
-        <label class="inl"><input type="checkbox" id="csvSkipDup" checked> 이미 있는 내용은 건너뛰기 <span class="cap">상시지출: 같은 날짜·항목·금액 / 월별 금액: 이미 금액이 있는 달</span></label>
+        <label class="inl"><input type="checkbox" id="csvSkipDup" checked> 이미 있는 내용은 건너뛰기 <span class="cap">일반지출: 같은 날짜·항목·금액 / 월별 금액: 이미 금액이 있는 달</span></label>
       </div>
     </div>
 
@@ -480,16 +497,18 @@
   /** 지출 기록(건별): { id, date:'YYYY-MM-DD', name, category, amount, memo } — 주유비처럼 날짜·금액이 그때그때 달라지는 지출 */
   let items = load();
   let records = loadRecords();
-  let recCache = null;            // records를 환산한 '상시 항목' 캐시 (records가 바뀌면 비운다)
+  let recCache = null;            // records를 환산한 '일반 항목' 캐시 (records가 바뀌면 비운다)
   let editingId = null;
   let editingRec = null;
   let calYear = new Date().getFullYear();
 
+  // 예전에 '상시 지출'(또는 '상시지출')이라고 저장된 분류 이름은 '일반 지출'로 바꿔 읽는다. 다음에 저장될 때 새 이름으로 기록된다.
+  function catName(c) { return (c === '상시 지출' || c === '상시지출') ? '일반 지출' : c; }      // 함수 선언이라 아래 let items = load()보다 먼저 쓸 수 있다
   function load() {
-    try { return JSON.parse(localStorage.getItem(KEY)) || []; } catch { return []; }
+    try { const a = JSON.parse(localStorage.getItem(KEY)) || []; return a.map(i => ({ ...i, category: catName(i.category) })); } catch { return []; }
   }
   function loadRecords() {
-    try { const r = JSON.parse(localStorage.getItem(RKEY)); return Array.isArray(r) ? r : []; } catch { return []; }
+    try { const r = JSON.parse(localStorage.getItem(RKEY)); return Array.isArray(r) ? r.map(x => ({ ...x, category: catName(x.category) })) : []; } catch { return []; }
   }
   const cacheLocal = () => {
     try { localStorage.setItem(KEY, JSON.stringify(items)); localStorage.setItem(RKEY, JSON.stringify(records)); } catch {}
@@ -547,7 +566,7 @@
   function normalize(x) {
     return {
       id: typeof x.id === 'string' && x.id ? x.id : uid(),
-      name: String(x.name), category: String(x.category || ''),
+      name: String(x.name), category: catName(String(x.category || '')),
       amount: Math.max(0, Number(x.amount) || 0),
       cycle: x.cycle === 'yearly' ? 'yearly' : 'monthly',
       month: Math.min(12, Math.max(1, Number(x.month) || 1)),
@@ -568,7 +587,7 @@
   function normalizeRecord(x) {
     return {
       id: typeof x.id === 'string' && x.id ? x.id : uid(),
-      date: String(x.date), name: String(x.name).trim(), category: String(x.category || ''),
+      date: String(x.date), name: String(x.name).trim(), category: catName(String(x.category || '')),
       amount: Math.max(0, Number(x.amount) || 0), memo: String(x.memo || ''),
     };
   }
@@ -620,7 +639,7 @@
       fileHandle = h; await saveHandle(h); await writeFile();
     } else {
       if (askReplace && (items.length || records.length) &&
-          !confirm(`파일의 고정지출 ${data.items.length}건·상시지출 ${data.records.length}건으로 현재 내용을 대체할까요?`)) return false;
+          !confirm(`파일의 고정지출 ${data.items.length}건·일반지출 ${data.records.length}건으로 현재 내용을 대체할까요?`)) return false;
       fileHandle = h; await saveHandle(h);
       items = data.items; records = data.records; recCache = null;
       setDirty(false); fileState = 'connected'; lastSaved = new Date();
@@ -740,7 +759,7 @@
     return ks.length ? it.overrides[ks[ks.length - 1]] : it.amount;
   };
   const fixedLabel = it => won(latestAmount(it));
-  // 지출 기록은 '월별 금액만 있는 상시 항목'으로 환산해 두면, 달력·그래프·비교가 기존 계산을 그대로 쓴다.
+  // 지출 기록은 '월별 금액만 있는 일반 항목'으로 환산해 두면, 달력·그래프·비교가 기존 계산을 그대로 쓴다.
   // 같은 이름의 기록은 한 항목으로 묶이고, 분류는 가장 최근 기록의 것을 따른다.
   function buildRecItems() {
     const map = new Map();
@@ -771,20 +790,26 @@
   const pad2 = n => String(n).padStart(2, '0');
   const isoDate = d => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 
-  // y년 m월에 나간 지출: 고정 항목은 그 달 금액(기록 없는 달·0원은 제외), 상시지출은 그 달 날짜의 건.
-  function monthSpend(y, m) {
-    let fixed = 0, fixedN = 0, varSum = 0, varN = 0;
+  // y년 m월 고정 항목 내역: rows는 금액이 있는 항목, missing은 그 달 금액이 아직 기록되지 않은 항목(미기록).
+  function monthFixed(y, m) {
+    const rows = [], missing = [];
     for (const it of fixedActive()) {
-      if (!paidIn(it, m) || isBlank(it, y, m)) continue;
+      if (!paidIn(it, m)) continue;
+      if (isBlank(it, y, m)) { missing.push(it); continue; }
       const amt = amountIn(it, y, m);
-      if (amt > 0) { fixed += amt; fixedN++; }
+      if (amt > 0) rows.push({ it, amt });
     }
-    for (const r of records) if (r.date.startsWith(`${y}-${pad2(m)}-`)) { varSum += r.amount; varN++; }
-    return { fixed, fixedN, varSum, varN };
+    return { rows, missing };
+  }
+  // y년 m월 날짜의 일반지출 기록
+  const monthVar = (y, m) => records.filter(r => r.date.startsWith(`${y}-${pad2(m)}-`));
+  function monthSpend(y, m) {
+    const f = monthFixed(y, m), v = monthVar(y, m);
+    return { fixed: f.rows.reduce((t, x) => t + x.amt, 0), fixedN: f.rows.length, varSum: v.reduce((t, r) => t + r.amount, 0), varN: v.length };
   }
 
   // y년 1월 1일부터 오늘까지 실제로 지출된 금액. 고정 항목은 그 달 결제일이 오늘 이전인 달만,
-  // 상시지출은 날짜가 오늘 이전인 건만 더한다(미리 입력해 둔 앞날의 금액은 넣지 않는다).
+  // 일반지출은 날짜가 오늘 이전인 건만 더한다(미리 입력해 둔 앞날의 금액은 넣지 않는다).
   function spentSoFar(y, now) {
     const t0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     let t = 0;
@@ -811,16 +836,57 @@
     const bars = [[`${yr - 1}년 전체`, last, 'var(--vc-other)'], [`${yr}년 현재까지`, cur, 'var(--vc-s1)']].map(([l, v, c]) =>
       `<div class="r"><span>${esc(l)}</span><span class="b"><i style="width:${(v / mx) * 100}%;background:${c}"></i></span><b>${esc(won(v))}</b></div>`).join('');
     const cards = [
-      { label: '전월 고정지출', value: won(prev.fixed), sub: `${py}년 ${pmn}월 · ${prev.fixedN}건` },
-      { label: '전월 상시지출', value: won(prev.varSum), sub: `${py}년 ${pmn}월 · ${prev.varN}건` },
+      { label: '전월 고정지출', spend: 'fixed', value: won(prev.fixed), sub: `${py}년 ${pmn}월 · ${prev.fixedN}건` },
+      { label: '전월 일반지출', spend: 'var', value: won(prev.varSum), sub: `${py}년 ${pmn}월 · ${prev.varN}건` },
       { label: '연간 고정지출(매년 결제분)', value: won(ySum), sub: `${yN}건` },
       { label: '지출 합계 비교 (전년도 ↔ 올해 현재까지)', cls: 'span2', html: `<div class="cmp2">${bars}</div>`,
         sub: `${last > 0 ? `올해 − 전년도 = ${diffText}` : '전년도 기록 없음'} · ${now.getMonth() + 1}월 ${now.getDate()}일 기준` },
     ];
     $('#stats').innerHTML = cards.map(c =>
-      `<div class="card stat ${c.cls || ''}"><div class="label">${esc(c.label)}</div>` +
+      `<div class="card stat ${c.cls || ''}${c.spend ? ' clickable' : ''}"${c.spend ? ` data-spend="${c.spend}" role="button" tabindex="0" title="눌러서 ${esc(c.label)} 내역 보기"` : ''}>` +
+      `<div class="label">${esc(c.label)}${c.spend ? '<span class="go">내역 ›</span>' : ''}</div>` +
       (c.html || `<div class="value">${esc(c.value)}</div>`) + `<div class="sub">${esc(c.sub)}</div></div>`).join('');
   }
+
+  // 전월 카드를 누르면 지난달 내역을 창으로 보여 준다. 카드 합계와 같은 계산(monthFixed, monthVar)을 쓰므로 합계가 항상 같다.
+  const spDlg = $('#spendDlg');
+  function openSpend(kind) {
+    const now = new Date(), pm = new Date(now.getFullYear(), now.getMonth() - 1, 1), y = pm.getFullYear(), m = pm.getMonth() + 1;
+    const isFixed = kind === 'fixed', table = $('#spTable'); table.replaceChildren();
+    $('#spTitle').textContent = `${y}년 ${m}월 ${isFixed ? '고정지출' : '일반지출'} 내역`;
+    $('#spMeta').textContent = isFixed ? '그 달에 금액이 기록된 고정 항목입니다. 금액이 큰 순서로 보여 줍니다.' : '그 달 날짜로 입력한 일반지출입니다. 최근 날짜가 위에 옵니다.';
+    const head = mk('tr'), cols = isFixed ? ['항목', '분류'] : ['날짜', '항목', '분류', '메모'];
+    cols.forEach(c => head.append(mk('th', '', c))); head.append(mk('th', 'num', '금액'));
+    const th = mk('thead'); th.append(head); table.append(th);
+    const tb = mk('tbody'); let total = 0, n = 0, missing = [];
+    if (isFixed) {
+      const f = monthFixed(y, m); missing = f.missing;
+      for (const x of f.rows.sort((a, b) => b.amt - a.amt || ko(a.it.name, b.it.name))) {
+        const nb = mk('button', 'link', x.it.name); nb.type = 'button'; nb.title = '이 항목의 월별 내역 보기';
+        nb.addEventListener('click', () => { spDlg.close(); openDetail(x.it); });
+        const nt = mk('td'); nt.append(nb);
+        const tr = mk('tr'); tr.append(nt, mk('td', '', x.it.category || '미분류'), mk('td', 'num', won(x.amt))); tb.append(tr);
+        total += x.amt; n++;
+      }
+    } else {
+      for (const r of monthVar(y, m).sort((a, b) => b.date.localeCompare(a.date) || b.amount - a.amount)) {
+        const tr = mk('tr'); tr.append(mk('td', '', r.date), mk('td', '', r.name), mk('td', '', r.category || '미분류'), mk('td', '', r.memo), mk('td', 'num', won(r.amount))); tb.append(tr);
+        total += r.amount; n++;
+      }
+    }
+    if (!n) { const tr = mk('tr'), td = mk('td', 'hint', '이 달에 기록된 내역이 없습니다.'); td.colSpan = cols.length + 1; tr.append(td); tb.append(tr); }
+    table.append(tb);
+    $('#spSummary').textContent = `합계 ${won(total)} · ${n}건`;
+    $('#spMissing').textContent = missing.length ? `이 달 금액이 아직 기록되지 않은 항목: ${missing.map(i => i.name).join(', ')} (금액을 입력하면 이 내역에 포함됩니다)` : '';
+    if (!spDlg.open) spDlg.showModal();
+  }
+  $('#stats').addEventListener('click', e => { const c = e.target.closest('[data-spend]'); if (c) openSpend(c.dataset.spend); });
+  $('#stats').addEventListener('keydown', e => {
+    const c = e.target.closest('[data-spend]');
+    if (c && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openSpend(c.dataset.spend); }
+  });
+  $('#spClose').onclick = () => spDlg.close();
+  spDlg.addEventListener('click', e => { if (e.target === spDlg) spDlg.close(); });
 
   // 고정지출 목록의 항목·분류 이름순 정렬. 머리글을 누르면 가나다순(오름) → 거꾸로(내림) → 원래 순서(매월·결제일순) 순으로 바뀐다.
   // 선택은 이 브라우저에 기억한다. 한글은 'ko' 규칙(가나다순)으로 비교하고, 분류가 비어 있는 항목은 어느 방향에서도 맨 뒤에 둔다.
@@ -1141,7 +1207,7 @@
   form.amount.addEventListener('input', () =>
     varInputs.querySelectorAll('input').forEach(inp => inp.placeholder = Number(form.amount.value) > 0 ? form.amount.value : '미기록'));
 
-  // 맨 위 '지출 추가' 카드: 상시지출 / 고정지출 중 어느 양식을 보여 줄지 고른다. 열 때마다 상시지출이 먼저 나온다.
+  // 맨 위 '지출 추가' 카드: 일반지출 / 고정지출 중 어느 양식을 보여 줄지 고른다. 열 때마다 일반지출이 먼저 나온다.
   // 항목을 수정하는 동안에는 종류를 바꿀 수 없다(수정 중인 항목이 다른 종류로 바뀌는 것을 막기 위해).
   const KIND_HINT = {
     fixed: '보험료·통신비·공과금처럼 매달(또는 매년) 정해진 날에 나가는 지출을 등록합니다.',
@@ -1211,7 +1277,7 @@
       $('#formTitle').textContent = '고정지출 수정';
       $('#submitBtn').textContent = '저장';
       $('#cancelBtn').classList.remove('hidden');
-      setKind('fixed'); lockKind();               // 상시지출 화면을 보고 있었어도 고정지출 양식으로 전환
+      setKind('fixed'); lockKind();               // 일반지출 화면을 보고 있었어도 고정지출 양식으로 전환
       $('#addCard').scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
   });
@@ -1345,7 +1411,7 @@
 
   // ---- 지출 기록(건별) -------------------------------------------------------
   // 주유비·생필품·식료품처럼 날짜와 금액이 그때그때 달라지는 지출. 항목명이 같은 기록은 월별로 합산되어
-  // 달력·그래프·비교에 '상시' 항목으로 나타난다(buildRecItems). 화면 문자열은 모두 textContent로만 넣는다.
+  // 달력·그래프·비교에 '일반' 항목으로 나타난다(buildRecItems). 화면 문자열은 모두 textContent로만 넣는다.
   const rf = $('#recForm'), recMonth = $('#recMonth');
   let recName = '';                                    // 항목 이름으로 거른 상태('' = 전체 항목)
   const todayStr = () => {
@@ -1356,7 +1422,7 @@
 
   function resetRecForm() {
     editingRec = null; rf.reset();
-    rf.date.value = todayStr(); rf.category.value = '상시 지출';
+    rf.date.value = todayStr(); rf.category.value = '일반 지출';
     $('#formTitle').textContent = '지출 추가';
     $('#recSubmit').textContent = '추가';
     $('#recCancel').classList.add('hidden');
@@ -1423,14 +1489,14 @@
     }
     const r = records.find(x => x.id === b.dataset.id); if (!r) return;
     if (b.dataset.act === 'del') {
-      if (confirm(`${r.date} ${r.name} ${won(r.amount)} 상시지출을 삭제할까요?`)) { records = records.filter(x => x !== r); save(); }
+      if (confirm(`${r.date} ${r.name} ${won(r.amount)} 일반지출을 삭제할까요?`)) { records = records.filter(x => x !== r); save(); }
     } else {
       editingRec = r.id;
       for (const k of ['date', 'name', 'category', 'amount', 'memo']) rf[k].value = r[k];
-      $('#formTitle').textContent = '상시지출 수정';
+      $('#formTitle').textContent = '일반지출 수정';
       $('#recSubmit').textContent = '저장';
       $('#recCancel').classList.remove('hidden');
-      setKind('var'); lockKind();                 // 고정지출 화면을 보고 있었어도 상시지출 양식으로 전환
+      setKind('var'); lockKind();                 // 고정지출 화면을 보고 있었어도 일반지출 양식으로 전환
       $('#addCard').scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
   });
@@ -1444,12 +1510,12 @@
   // 내려받는 파일 이름: dodo-budget-날짜(YYYYMMDD). 예) dodo-budget-20261102.json
   const downloadName = ext => `dodo-budget-${isoDate(new Date()).replace(/-/g, '')}.${ext}`;
   $('#exportJson').onclick = () => {
-    download(downloadName('json'), serialize(), 'application/json');   // 고정지출 + 상시지출
+    download(downloadName('json'), serialize(), 'application/json');   // 고정지출 + 일반지출
     lset(RK.last, isoDate(new Date())); renderRemind();                // 백업을 받았으니 이번 달 알림은 끈다
   };
 
   // ---- CSV 가져오기 (은행·요금 조회에서 받은 임의의 CSV) --------------------------------
-  // 열 이름이 파일마다 다르므로 화면에서 날짜·금액 열을 고르게 하고, 상시지출(건별) 또는 고정지출의 월별 금액으로 넣는다.
+  // 열 이름이 파일마다 다르므로 화면에서 날짜·금액 열을 고르게 하고, 일반지출(건별) 또는 고정지출의 월별 금액으로 넣는다.
   // 한글 은행 파일은 EUC-KR(CP949)인 경우가 많아, UTF-8로 읽다 실패하면 EUC-KR로 다시 읽는다.
   const csvDlg = $('#csvDlg');
   const csv = { head: [], body: [], name: '' };
@@ -1569,7 +1635,7 @@
     });
     const add = [], dup = [];
     if (t === 'rec') {
-      const have = new Map();                                 // 이미 있는 상시지출을 (날짜|항목|금액)별 개수로 센다
+      const have = new Map();                                 // 이미 있는 일반지출을 (날짜|항목|금액)별 개수로 센다
       for (const r of records) { const k = `${r.date}|${r.name}|${r.amount}`; have.set(k, (have.get(k) || 0) + 1); }
       for (const x of rows) {
         const k = `${x.date}|${x.name}|${x.amt}`;
@@ -1700,7 +1766,7 @@
       'END:VEVENT', 'END:VCALENDAR'].join('\r\n') + '\r\n';
     download('dodo-budget-backup-reminder.ics', ics, 'text/calendar;charset=utf-8');
   };
-  // CSV: 한 줄에 한 번의 지출. 고정지출은 금액이 있는 달마다, 상시지출은 건마다 한 줄이다.
+  // CSV: 한 줄에 한 번의 지출. 고정지출은 금액이 있는 달마다, 일반지출은 건마다 한 줄이다.
   // 금액 열을 더하면 '올해 지출 합계'와 같다(중지한 고정 항목과 기록 없는 달은 앱 계산과 같이 뺀다).
   $('#exportCsv').onclick = () => {
     const q = v => typeof v === 'number' ? String(v) : `"${String(v ?? '').replace(/"/g, '""')}"`;
@@ -1714,7 +1780,7 @@
       const d = dayIn(it, y, m), mm = String(m).padStart(2, '0');
       out.push([d ? `${y}-${mm}-${String(d).padStart(2, '0')}` : `${y}-${mm}`, '고정지출', it.name, it.category || '', amt, '']);
     }
-    for (const r of records) out.push([r.date, '상시지출', r.name, r.category || '', r.amount, r.memo || '']);
+    for (const r of records) out.push([r.date, '일반지출', r.name, r.category || '', r.amount, r.memo || '']);
     out.sort((x, y) => x[0].localeCompare(y[0]) || x[1].localeCompare(y[1]) || x[2].localeCompare(y[2], 'ko'));
     const head = ['날짜', '구분', '항목', '분류', '금액', '메모'];
     // 맨 앞의 \uFEFF는 엑셀에서 한글이 깨지지 않게 하는 표시(BOM)다.
@@ -1727,7 +1793,7 @@
       // 배열 또는 { version, items } 형식을 모두 받는다. 불러온 항목은 새 id를 부여해 기존 항목과 겹치지 않게 한다.
       const data = parseData(JSON.parse(await file.text()));
       const cleanItems = data.items.map(x => ({ ...x, id: uid() })), cleanRecs = data.records.map(x => ({ ...x, id: uid() }));
-      if (confirm(`고정지출 ${cleanItems.length}건·상시지출 ${cleanRecs.length}건을 가져옵니다.\n\n확인: 현재 데이터를 이 파일의 내용으로 대체\n취소: 현재 데이터에 덧붙이기`)) {
+      if (confirm(`고정지출 ${cleanItems.length}건·일반지출 ${cleanRecs.length}건을 가져옵니다.\n\n확인: 현재 데이터를 이 파일의 내용으로 대체\n취소: 현재 데이터에 덧붙이기`)) {
         items = cleanItems;
         if (data.hasRecords) records = cleanRecs;       // 기록이 없는 옛 형식 파일로는 기존 지출 기록을 지우지 않는다
       } else { items = items.concat(cleanItems); records = records.concat(cleanRecs); }
