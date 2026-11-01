@@ -55,6 +55,7 @@
   .month .mh{display:flex;justify-content:space-between;font-weight:600;margin-bottom:6px}
   .month ul{list-style:none;margin:0;padding:0;font-size:13px;color:var(--muted)}
   .month li{display:flex;justify-content:space-between;gap:8px}
+  .month li span:last-child{white-space:nowrap}
   .bar{height:8px;border-radius:4px;background:var(--accent);margin-top:8px;min-width:2px}
   .empty{color:var(--muted);text-align:center;padding:28px 0}
   .hidden{display:none}
@@ -119,6 +120,7 @@
   .vc-mode{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-top:8px}
   .vc-mode button{border:none;border-radius:0;background:none;padding:4px 12px;font-size:13px;color:var(--muted)}
   .vc-mode button[aria-pressed=true]{background:var(--accent-weak);color:var(--accent);font-weight:600}
+  .vc-mode button:disabled{opacity:.5;cursor:not-allowed}
   /* 항목별 비교: 연간 금액 순위 가로 막대 (한 가지 색) */
   .cmp-row{display:grid;grid-template-columns:170px 1fr;gap:8px;align-items:center;padding:6px 4px;border-radius:6px;outline:none}
   .cmp-row:hover,.cmp-row:focus-visible{background:var(--bg)}
@@ -144,8 +146,15 @@
 
   <div class="grid cards" id="stats"></div>
 
-  <div class="card" style="margin-bottom:16px">
-    <h2 id="formTitle">고정지출 추가</h2>
+  <div class="card" id="addCard" style="margin-bottom:16px">
+    <div class="row between">
+      <h2 id="formTitle" style="margin:0">지출 추가</h2>
+      <div class="vc-mode" role="group" aria-label="지출 종류" style="margin-top:0">
+        <button type="button" id="kindFixed" aria-pressed="true">고정지출</button>
+        <button type="button" id="kindVar" aria-pressed="false">상시지출</button>
+      </div>
+    </div>
+    <div class="hint" id="kindHint" style="margin:6px 0 12px"></div>
     <form id="form" class="grid form">
       <label>항목명
         <input name="name" required placeholder="예: 넷플릭스, 자동차보험">
@@ -187,11 +196,33 @@
         <button type="button" id="cancelBtn" class="hidden">취소</button>
       </div>
     </form>
+    <form id="recForm" class="grid form hidden">
+      <label>날짜
+        <input name="date" type="date" required>
+      </label>
+      <label>항목명
+        <input name="name" required list="recNames" placeholder="예: 주유비">
+        <datalist id="recNames"></datalist>
+      </label>
+      <label>분류
+        <input name="category" list="cats" placeholder="예: 상시 지출">
+      </label>
+      <label>금액(원)
+        <input name="amount" type="number" min="0" step="1" required inputmode="numeric">
+      </label>
+      <label class="wide">메모
+        <input name="memo" placeholder="주유소, 리터 수 등 (선택)">
+      </label>
+      <div class="row wide">
+        <button type="submit" class="primary" id="recSubmit">추가</button>
+        <button type="button" id="recCancel" class="hidden">취소</button>
+      </div>
+    </form>
   </div>
 
   <div class="tabs" role="tablist">
-    <button class="active" data-tab="list">목록</button>
-    <button data-tab="records">지출 기록</button>
+    <button class="active" data-tab="list">고정지출 목록</button>
+    <button data-tab="records">상시지출 목록</button>
     <button data-tab="calendar">연간 달력</button>
     <button data-tab="category">분류별</button>
     <button data-tab="compare">항목별 비교</button>
@@ -220,34 +251,11 @@
       </tr></thead>
       <tbody id="tbody"></tbody>
     </table></div>
-    <div id="emptyMsg" class="empty hidden">등록된 고정지출이 없습니다. 위 양식에서 추가해 주세요.</div>
+    <div id="emptyMsg" class="empty hidden">등록된 고정지출이 없습니다. 위 '지출 추가'에서 추가해 주세요.</div>
   </section>
 
   <section id="tab-records" class="card hidden">
-    <h2 id="recFormTitle">지출 기록 추가</h2>
-    <div class="hint" style="margin-bottom:8px">주유비·생필품·식료품처럼 날짜와 금액이 그때그때 달라지는 지출을 건별로 입력합니다. 같은 항목명의 기록은 월별로 합산되어 달력·그래프·비교에 '상시'로 나타납니다.</div>
-    <form id="recForm" class="grid form">
-      <label>날짜
-        <input name="date" type="date" required>
-      </label>
-      <label>항목명
-        <input name="name" required list="recNames" placeholder="예: 주유비">
-        <datalist id="recNames"></datalist>
-      </label>
-      <label>분류
-        <input name="category" list="cats" placeholder="예: 상시 지출">
-      </label>
-      <label>금액(원)
-        <input name="amount" type="number" min="0" step="1" required inputmode="numeric">
-      </label>
-      <label class="wide">메모
-        <input name="memo" placeholder="주유소, 리터 수 등 (선택)">
-      </label>
-      <div class="row wide">
-        <button type="submit" class="primary" id="recSubmit">추가</button>
-        <button type="button" id="recCancel" class="hidden">취소</button>
-      </div>
-    </form>
+    <div class="hint" style="margin-bottom:8px">주유비·생필품·식료품처럼 날짜와 금액이 그때그때 달라지는 지출입니다. 위의 '지출 추가'에서 종류를 '상시지출'로 골라 입력하세요. 같은 항목명은 월별로 합산되어 달력·그래프·비교에 함께 나타납니다.</div>
     <div class="row between" style="margin:16px 0 8px">
       <div class="row">
         <label style="flex-direction:row;align-items:center;gap:8px">조회 월
@@ -263,7 +271,7 @@
       <thead><tr><th>날짜</th><th>항목</th><th>분류</th><th>메모</th><th class="num">금액</th><th></th></tr></thead>
       <tbody id="recBody"></tbody>
     </table></div>
-    <div id="recEmpty" class="empty hidden">조회한 기간에 입력한 지출 기록이 없습니다.</div>
+    <div id="recEmpty" class="empty hidden">조회한 기간에 입력한 상시지출이 없습니다.</div>
   </section>
 
   <section id="tab-calendar" class="card hidden">
@@ -488,7 +496,7 @@
       fileHandle = h; await saveHandle(h); await writeFile();
     } else {
       if (askReplace && (items.length || records.length) &&
-          !confirm(`파일의 고정지출 ${data.items.length}건·지출 기록 ${data.records.length}건으로 현재 내용을 대체할까요?`)) return false;
+          !confirm(`파일의 고정지출 ${data.items.length}건·상시지출 ${data.records.length}건으로 현재 내용을 대체할까요?`)) return false;
       fileHandle = h; await saveHandle(h);
       items = data.items; records = data.records; recCache = null;
       setDirty(false); fileState = 'connected'; lastSaved = new Date();
@@ -630,20 +638,6 @@
   // 말일 보정: 31일 결제인데 해당 월이 30일까지면 말일로 처리
   // 결제일이 0(상시)이면 0을 돌려준다.
   const dayIn = (it, y, m) => it.day ? Math.min(it.day, new Date(y, m, 0).getDate()) : 0;
-  const dayLabel = (it, y, m) => { const d = dayIn(it, y, m); return d ? `${d}일` : '상시'; };
-
-  function nextPayment(it, from) {
-    if (!it.day) return null;                 // 날짜가 없는 상시 지출은 '다음 결제'에서 제외
-    const y = from.getFullYear();
-    for (let k = 0; k < 24; k++) {
-      const m0 = from.getMonth() + k;
-      const yy = y + Math.floor(m0 / 12), mm = (m0 % 12) + 1;
-      if (!paidIn(it, mm)) continue;
-      const d = new Date(yy, mm - 1, dayIn(it, yy, mm));
-      if (d >= new Date(from.getFullYear(), from.getMonth(), from.getDate())) return d;
-    }
-    return null;
-  }
 
   // ---- 렌더링 -----------------------------------------------------------
   function render() {
@@ -658,18 +652,10 @@
     const ySum = fxY.reduce((s, i) => s + fixedAmount(i), 0);
     const yr = thisYear();
     const annual = a.reduce((s, i) => s + annualOf(i, yr), 0);
-    const now = new Date(), thisM = now.getMonth() + 1;
-    const thisMonthTotal = a.filter(i => paidIn(i, thisM)).reduce((s, i) => s + amountIn(i, yr, thisM), 0);
-    const upcoming = a.map(i => ({ i, d: nextPayment(i, now) }))
-      .filter(x => x.d && !isBlank(x.i, x.d.getFullYear(), x.d.getMonth() + 1))      // 기록이 없는 달은 금액을 알 수 없으므로 제외
-      .sort((p, q) => p.d - q.d)[0];
     const cards = [
       ['매월 고정지출', won(mSum), `${fxM.length}건 · 월별상이 항목 제외`],
       ['연간 고정지출(매년 결제분)', won(ySum), `${fxY.length}건`],
       ['올해 지출 합계', won(annual), `${yr}년 · 기록된 금액 + 고정 금액`],
-      [`${thisM}월 결제 예정`, won(thisMonthTotal), '고정 항목 + 이번 달 지출 기록'],
-      ['다음 결제', upcoming ? `${upcoming.d.getMonth()+1}/${upcoming.d.getDate()}` : '-',
-        upcoming ? `${upcoming.i.name} · ${won(amountIn(upcoming.i, upcoming.d.getFullYear(), upcoming.d.getMonth() + 1))}` : '예정 없음'],
     ];
     $('#stats').innerHTML = cards.map(([l, v, s]) =>
       `<div class="card stat"><div class="label">${esc(l)}</div><div class="value">${esc(v)}</div><div class="sub">${esc(s)}</div></div>`).join('');
@@ -708,7 +694,7 @@
       const isNow = now.getFullYear() === calYear && now.getMonth() === k;
       return `<div class="month ${isNow ? 'now' : ''}">
         <div class="mh"><span>${m}월</span><span>${won(t)}</span></div>
-        <ul>${list.map(i => `<li><span>${dayLabel(i, calYear, m)} ${esc(i.name)}</span><span>${won(amountIn(i, calYear, m))}</span></li>`).join('') || '<li>없음</li>'}</ul>
+        <ul>${list.map(i => `<li><span>${esc(i.name)}</span><span>${won(amountIn(i, calYear, m))}</span></li>`).join('') || '<li>없음</li>'}</ul>
         <div class="bar" style="width:${(t / max) * 100}%"></div>
       </div>`;
     }).join('');
@@ -963,12 +949,35 @@
   form.amount.addEventListener('input', () =>
     varInputs.querySelectorAll('input').forEach(inp => inp.placeholder = Number(form.amount.value) > 0 ? form.amount.value : '미기록'));
 
+  // 맨 위 '지출 추가' 카드: 고정지출 / 상시지출 중 어느 양식을 보여 줄지 고른다. 마지막 선택은 이 브라우저에 기억한다.
+  // 항목을 수정하는 동안에는 종류를 바꿀 수 없다(수정 중인 항목이 다른 종류로 바뀌는 것을 막기 위해).
+  const KIND_KEY = 'fixed-expenses.kind';
+  const KIND_HINT = {
+    fixed: '보험료·통신비·공과금처럼 매달(또는 매년) 정해진 날에 나가는 지출을 등록합니다.',
+    var: '주유비·생필품·식료품처럼 날짜와 금액이 그때그때 달라지는 지출을 건별로 입력합니다. 같은 항목명은 월별로 합산되어 달력·그래프·비교에 나타납니다.',
+  };
+  let kind = 'fixed';
+  function lockKind() { $('#kindFixed').disabled = $('#kindVar').disabled = !!(editingId || editingRec); }
+  function setKind(k, remember = true) {
+    kind = k;
+    $('#form').classList.toggle('hidden', k !== 'fixed');
+    $('#recForm').classList.toggle('hidden', k !== 'var');
+    $('#kindFixed').setAttribute('aria-pressed', String(k === 'fixed'));
+    $('#kindVar').setAttribute('aria-pressed', String(k === 'var'));
+    $('#kindHint').textContent = KIND_HINT[k];
+    if (remember) { try { localStorage.setItem(KIND_KEY, k); } catch {} }
+  }
+  $('#kindFixed').onclick = () => setKind('fixed');
+  $('#kindVar').onclick = () => setKind('var');
+  try { if (localStorage.getItem(KIND_KEY) === 'var') kind = 'var'; } catch {}
+
   function resetForm() {
     editingId = null; form.reset(); syncCycle();
     formOv = {}; varY = thisYear(); $('#varBox').open = false; renderVar();
-    $('#formTitle').textContent = '고정지출 추가';
+    $('#formTitle').textContent = '지출 추가';
     $('#submitBtn').textContent = '추가';
     $('#cancelBtn').classList.add('hidden');
+    lockKind();
   }
   $('#cancelBtn').addEventListener('click', resetForm);
 
@@ -1013,7 +1022,8 @@
       $('#formTitle').textContent = '고정지출 수정';
       $('#submitBtn').textContent = '저장';
       $('#cancelBtn').classList.remove('hidden');
-      form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setKind('fixed', false); lockKind();               // 상시지출 화면을 보고 있었어도 고정지출 양식으로 전환
+      $('#addCard').scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
   });
 
@@ -1064,21 +1074,18 @@
       + (it.memo ? `\n${it.memo}` : '');                               // 목록에서 뺀 메모는 여기서 보여 준다
     $('#dtYear').textContent = `${dtYear}년`;
     const head = mk('tr');
-    ['월', '날짜'].forEach(t => head.append(mk('th', '', t)));
-    head.append(mk('th', 'num', '금액'), mk('th', '', '구분'));
+    head.append(mk('th', '', '월'), mk('th', 'num', '금액'), mk('th', '', '구분'));      // 납기일(날짜) 열은 두지 않는다
     const thead = mk('thead'); thead.append(head); table.append(thead);
     const tb = mk('tbody'); let total = 0, rec = 0, est = 0;
     for (let m = 1; m <= 12; m++) {
       if (!paidIn(it, m)) continue;
       const isRec = hasOv(it, dtYear, m), blank = isBlank(it, dtYear, m);
       const amt = blank ? 0 : amountIn(it, dtYear, m);
-      const d = dayIn(it, dtYear, m);
       const kind = blank ? '미기록' : !hasVar(it) ? '고정 금액' : isRec ? '기록' : '기본 금액(추정)';
       if (hasVar(it)) { if (isRec) rec++; else if (!blank) est++; }
       total += amt;
       const tr = mk('tr'); if (hasVar(it) && !isRec) tr.style.color = 'var(--muted)';
-      tr.append(mk('td', '', `${m}월`), mk('td', '', d ? `${dtYear}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}` : '상시'),
-        mk('td', 'num', blank ? '-' : won(amt)), mk('td', '', kind));
+      tr.append(mk('td', '', `${m}월`), mk('td', 'num', blank ? '-' : won(amt)), mk('td', '', kind));
       tb.append(tr);
     }
     table.append(tb);
@@ -1107,9 +1114,10 @@
   function resetRecForm() {
     editingRec = null; rf.reset();
     rf.date.value = todayStr(); rf.category.value = '상시 지출';
-    $('#recFormTitle').textContent = '지출 기록 추가';
+    $('#formTitle').textContent = '지출 추가';
     $('#recSubmit').textContent = '추가';
     $('#recCancel').classList.add('hidden');
+    lockKind();
   }
   $('#recCancel').onclick = resetRecForm;
   rf.name.addEventListener('change', () => {          // 같은 이름의 이전 기록이 있으면 분류를 맞춰 준다
@@ -1141,7 +1149,7 @@
     for (const r of rows) {
       const tr = mk('tr');
       const nameTd = mk('td'), nb = mk('button', 'link', r.name);
-      nb.type = 'button'; nb.dataset.act = 'filter'; nb.dataset.name = r.name; nb.title = '이 항목의 기록만 보기'; nameTd.append(nb);
+      nb.type = 'button'; nb.dataset.act = 'filter'; nb.dataset.name = r.name; nb.title = '이 항목의 내역만 보기'; nameTd.append(nb);
       tr.append(mk('td', '', r.date), nameTd, mk('td', '', r.category || '미분류'), mk('td', '', r.memo),
         mk('td', 'num', won(r.amount)));
       const td = mk('td', 'row'); td.style.cssText = 'justify-content:flex-end;flex-wrap:nowrap';
@@ -1172,14 +1180,15 @@
     }
     const r = records.find(x => x.id === b.dataset.id); if (!r) return;
     if (b.dataset.act === 'del') {
-      if (confirm(`${r.date} ${r.name} ${won(r.amount)} 기록을 삭제할까요?`)) { records = records.filter(x => x !== r); save(); }
+      if (confirm(`${r.date} ${r.name} ${won(r.amount)} 상시지출을 삭제할까요?`)) { records = records.filter(x => x !== r); save(); }
     } else {
       editingRec = r.id;
       for (const k of ['date', 'name', 'category', 'amount', 'memo']) rf[k].value = r[k];
-      $('#recFormTitle').textContent = '지출 기록 수정';
+      $('#formTitle').textContent = '상시지출 수정';
       $('#recSubmit').textContent = '저장';
       $('#recCancel').classList.remove('hidden');
-      rf.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setKind('var', false); lockKind();                 // 고정지출 화면을 보고 있었어도 상시지출 양식으로 전환
+      $('#addCard').scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
   });
 
@@ -1205,7 +1214,7 @@
       // 배열 또는 { version, items } 형식을 모두 받는다. 불러온 항목은 새 id를 부여해 기존 항목과 겹치지 않게 한다.
       const data = parseData(JSON.parse(await file.text()));
       const cleanItems = data.items.map(x => ({ ...x, id: uid() })), cleanRecs = data.records.map(x => ({ ...x, id: uid() }));
-      if (confirm(`고정지출 ${cleanItems.length}건·지출 기록 ${cleanRecs.length}건을 불러옵니다. 기존 데이터를 대체할까요?\n(취소: 기존 데이터에 추가)`)) {
+      if (confirm(`고정지출 ${cleanItems.length}건·상시지출 ${cleanRecs.length}건을 불러옵니다. 기존 데이터를 대체할까요?\n(취소: 기존 데이터에 추가)`)) {
         items = cleanItems;
         if (data.hasRecords) records = cleanRecs;       // 기록이 없는 옛 형식 파일로는 기존 지출 기록을 지우지 않는다
       } else { items = items.concat(cleanItems); records = records.concat(cleanRecs); }
@@ -1214,7 +1223,7 @@
     e.target.value = '';
   });
 
-  syncCycle(); renderVar(); resetRecForm(); setMode(barMode, false); render(); renderStorage(); initFile();
+  syncCycle(); renderVar(); resetRecForm(); setKind(kind, false); setMode(barMode, false); render(); renderStorage(); initFile();
 })();
 </script>
 </body>
