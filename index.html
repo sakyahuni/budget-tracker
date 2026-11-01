@@ -25,6 +25,12 @@
   .stat .label{color:var(--muted);font-size:13px}
   .stat .value{font-size:22px;font-weight:700;margin-top:2px;font-variant-numeric:tabular-nums}
   .stat .sub{color:var(--muted);font-size:12px;margin-top:2px}
+  .card.span2{grid-column:1 / -1}                      /* 비교 카드는 한 줄 전체를 쓴다 */
+  .cmp2{margin-top:8px;display:grid;gap:6px}
+  .cmp2 .r{display:grid;grid-template-columns:104px 1fr auto;gap:8px;align-items:center;font-size:13px}
+  .cmp2 .b{display:block;height:10px;background:var(--bg);border-radius:5px;overflow:hidden}
+  .cmp2 .b i{display:block;height:100%;min-width:2px;border-radius:0 4px 4px 0}
+  .cmp2 b{font-variant-numeric:tabular-nums}
   .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
   .row.between{justify-content:space-between}
   label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted)}
@@ -648,21 +654,59 @@
     renderStats(); renderList(); renderRecords(); renderCalendar(); renderCompare(); renderCategory(); renderCats();
   }
 
+  // ---- 요약 카드 ----------------------------------------------------------
+  const pad2 = n => String(n).padStart(2, '0');
+  const isoDate = d => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+
+  // y년 m월에 나간 지출: 고정 항목은 그 달 금액(기록 없는 달·0원은 제외), 상시지출은 그 달 날짜의 건.
+  function monthSpend(y, m) {
+    let fixed = 0, fixedN = 0, varSum = 0, varN = 0;
+    for (const it of fixedActive()) {
+      if (!paidIn(it, m) || isBlank(it, y, m)) continue;
+      const amt = amountIn(it, y, m);
+      if (amt > 0) { fixed += amt; fixedN++; }
+    }
+    for (const r of records) if (r.date.startsWith(`${y}-${pad2(m)}-`)) { varSum += r.amount; varN++; }
+    return { fixed, fixedN, varSum, varN };
+  }
+
+  // y년 1월 1일부터 오늘까지 실제로 지출된 금액. 고정 항목은 그 달 결제일이 오늘 이전인 달만,
+  // 상시지출은 날짜가 오늘 이전인 건만 더한다(미리 입력해 둔 앞날의 금액은 넣지 않는다).
+  function spentSoFar(y, now) {
+    const t0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    let t = 0;
+    for (const it of fixedActive()) for (let m = 1; m <= 12; m++) {
+      if (!paidIn(it, m) || isBlank(it, y, m)) continue;
+      if (new Date(y, m - 1, dayIn(it, y, m) || 1) > t0) continue;
+      t += amountIn(it, y, m);
+    }
+    for (const r of records) if (r.date.startsWith(`${y}-`) && r.date <= isoDate(t0)) t += r.amount;
+    return t;
+  }
+
   function renderStats() {
-    const a = active(), fx = fixedActive();     // 합계에는 지출 기록까지, '고정지출' 카드에는 고정 항목만
-    const fxM = fx.filter(i => i.cycle === 'monthly');                        // 모든 항목을 최근 기록 금액으로 합산
-    const fxY = fx.filter(i => i.cycle === 'yearly');
-    const mSum = fxM.reduce((s, i) => s + latestAmount(i), 0);
-    const ySum = fxY.reduce((s, i) => s + latestAmount(i), 0);
-    const yr = thisYear();
-    const annual = a.reduce((s, i) => s + annualOf(i, yr), 0);
+    const a = active(), fx = fixedActive();
+    const ySum = fx.filter(i => i.cycle === 'yearly').reduce((s, i) => s + latestAmount(i), 0);
+    const yN = fx.filter(i => i.cycle === 'yearly').length;
+    const now = new Date(), yr = now.getFullYear();
+    const pm = new Date(yr, now.getMonth() - 1, 1), py = pm.getFullYear(), pmn = pm.getMonth() + 1;     // 전월(1월이면 지난해 12월)
+    const prev = monthSpend(py, pmn);
+    // 전년도 전체 합계와 올해 현재까지 합계 비교
+    const last = a.reduce((s, i) => s + annualOf(i, yr - 1), 0), cur = spentSoFar(yr, now);
+    const mx = Math.max(last, cur, 1), diff = cur - last, sign = diff >= 0 ? '+' : '−';
+    const diffText = last > 0 ? `${sign}${won(Math.abs(diff))} (${sign}${Math.abs(Math.round(diff / last * 100))}%)` : '전년도 기록 없음';
+    const bars = [[`${yr - 1}년 전체`, last, 'var(--vc-other)'], [`${yr}년 현재까지`, cur, 'var(--vc-s1)']].map(([l, v, c]) =>
+      `<div class="r"><span>${esc(l)}</span><span class="b"><i style="width:${(v / mx) * 100}%;background:${c}"></i></span><b>${esc(won(v))}</b></div>`).join('');
     const cards = [
-      ['매월 고정지출', won(mSum), `${fxM.length}건 · 최근 기록 금액 기준`],
-      ['연간 고정지출(매년 결제분)', won(ySum), `${fxY.length}건`],
-      ['올해 지출 합계', won(annual), `${yr}년 · 기록된 금액 + 고정 금액`],
+      { label: '전월 고정지출', value: won(prev.fixed), sub: `${py}년 ${pmn}월 · ${prev.fixedN}건` },
+      { label: '전월 상시지출', value: won(prev.varSum), sub: `${py}년 ${pmn}월 · ${prev.varN}건` },
+      { label: '연간 고정지출(매년 결제분)', value: won(ySum), sub: `${yN}건` },
+      { label: '지출 합계 비교 (전년도 ↔ 올해 현재까지)', cls: 'span2', html: `<div class="cmp2">${bars}</div>`,
+        sub: `${last > 0 ? `올해 − 전년도 = ${diffText}` : '전년도 기록 없음'} · ${now.getMonth() + 1}월 ${now.getDate()}일 기준` },
     ];
-    $('#stats').innerHTML = cards.map(([l, v, s]) =>
-      `<div class="card stat"><div class="label">${esc(l)}</div><div class="value">${esc(v)}</div><div class="sub">${esc(s)}</div></div>`).join('');
+    $('#stats').innerHTML = cards.map(c =>
+      `<div class="card stat ${c.cls || ''}"><div class="label">${esc(c.label)}</div>` +
+      (c.html || `<div class="value">${esc(c.value)}</div>`) + `<div class="sub">${esc(c.sub)}</div></div>`).join('');
   }
 
   function renderList() {
