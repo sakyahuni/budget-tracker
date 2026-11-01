@@ -73,8 +73,12 @@
   .mamt{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px}
   .hint{color:var(--muted);font-size:12px}
   /* 월별 막대 그래프. 막대 색은 팔레트 검증을 통과한 파랑(라이트 #2a78d6 / 다크 #3987e5) */
-  :root{--vc-bar:#2a78d6}
-  @media (prefers-color-scheme:dark){:root{--vc-bar:#3987e5}}
+  /* 항목별 색(범주형 슬롯 1~6, 팔레트 검증 통과)과 '기타'용 회색 */
+  :root{--vc-s1:#2a78d6;--vc-s2:#eb6834;--vc-s3:#1baf7a;--vc-s4:#eda100;--vc-s5:#e87ba4;--vc-s6:#008300;--vc-other:#898781}
+  @media (prefers-color-scheme:dark){:root{--vc-s1:#3987e5;--vc-s2:#d95926;--vc-s3:#199e70;--vc-s4:#c98500;--vc-s5:#d55181;--vc-s6:#008300}}
+  .vc-legend{display:flex;flex-wrap:wrap;gap:4px 14px;margin:8px 0 0;font-size:12px;color:var(--text)}
+  .vc-legend span{display:inline-flex;align-items:center;gap:6px}
+  .vc-sw{display:inline-block;width:10px;height:10px;border-radius:2px;flex:none}
   .vc-box{margin-bottom:16px}
   .vc-box h3{font-size:14px;margin:0 0 4px}
   .vc-plot{position:relative;height:250px;padding:12px 0 26px 44px}
@@ -83,9 +87,11 @@
   .vc-gl span{position:absolute;left:-44px;width:38px;text-align:right;transform:translateY(-50%);font-size:11px;color:var(--muted)}
   .vc-cols{position:absolute;inset:0;display:flex}
   .vc-col{flex:1;height:100%;position:relative;display:flex;align-items:flex-end;justify-content:center;outline:none;border-radius:4px}
-  .vc-bar{width:min(24px,calc(100% - 4px));background:var(--vc-bar);border-radius:4px 4px 0 0}
+  .vc-bar{width:min(24px,calc(100% - 4px));display:flex;flex-direction:column-reverse;border-radius:4px 4px 0 0;overflow:hidden}
+  .vc-seg{width:100%;flex:none}
+  .vc-seg + .vc-seg{box-shadow:0 -2px 0 0 var(--card)}      /* 쌓인 조각 사이 2px 간격은 배경색으로 */
   .vc-col:hover .vc-bar,.vc-col:focus-visible .vc-bar{filter:brightness(1.15)}
-  .vc-col:focus-visible{box-shadow:inset 0 0 0 2px var(--vc-bar)}
+  .vc-col:focus-visible{box-shadow:inset 0 0 0 2px var(--text)}
   .vc-x{position:absolute;top:100%;margin-top:6px;font-size:11px;color:var(--muted)}
   .vc-val{position:absolute;left:50%;transform:translateX(-50%);white-space:nowrap;font-size:11px;font-weight:600;color:var(--text)}
   .vc-tip .r span:first-child{word-break:keep-all}
@@ -94,6 +100,8 @@
     background:var(--card);border:1px solid var(--line);border-radius:8px;box-shadow:0 4px 14px rgba(0,0,0,.15)}
   .vc-tip .h{color:var(--muted)} .vc-tip .v{font-size:15px;font-weight:700;margin:2px 0 4px}
   .vc-tip .r{display:flex;justify-content:space-between;gap:12px;color:var(--muted)}
+  .vc-tip .r .k{display:inline-flex;align-items:center;gap:6px}
+  .vc-tip .r .k i{display:inline-block;width:10px;height:3px;border-radius:2px;flex:none}
   .vc-empty{color:var(--muted);text-align:center;padding:40px 0}
   details.vc-tbl{margin-top:8px;font-size:13px}
   details.vc-tbl summary{cursor:pointer;color:var(--muted)}
@@ -201,8 +209,9 @@
     </div>
     <div class="vc-box">
       <h3 id="barTitle"></h3>
-      <div class="hint">기록이 없는 달은 기본 금액 기준입니다. 막대에 마우스를 올리거나 키보드로 이동하면 항목별 금액이 보입니다.</div>
-      <div id="barChart" role="group" aria-label="월별 지출 합계 막대 그래프"></div>
+      <div class="hint">막대의 색은 항목, 전체 높이는 그달의 합계입니다. 기록이 없는 달은 기본 금액 기준입니다. 막대에 마우스를 올리거나 키보드로 이동하면 항목별 금액이 보입니다.</div>
+      <div class="vc-legend" id="barLegend"></div>
+      <div id="barChart" role="group" aria-label="월별 지출을 항목별 색으로 나눈 누적 막대 그래프"></div>
       <details class="vc-tbl">
         <summary>표로 보기</summary>
         <div class="scroll"><table id="barTable"></table></div>
@@ -555,22 +564,63 @@
   }
   const tickLabel = n => n === 0 ? '0' : n >= 10000 ? `${+(n / 10000).toFixed(1)}만` : n.toLocaleString('ko-KR');
 
+  // 그래프에 쓸 계열을 정한다. 올해 연간 금액이 큰 항목 6개는 각자 색을 받고, 나머지는 회색 '기타'로 묶는다.
+  // 색은 순위가 아니라 항목 목록의 순서로 배정하므로, 연도를 넘겨도 같은 항목은 같은 색을 유지한다.
+  const SERIES_MAX = 6;
+  function chartSeries() {
+    const ranked = active().map(i => ({ i, y: annualOf(i, thisYear()) })).filter(x => x.y > 0).sort((a, b) => b.y - a.y);
+    const shown = (ranked.length <= SERIES_MAX ? ranked : ranked.slice(0, SERIES_MAX)).map(x => x.i)
+      .sort((a, b) => items.indexOf(a) - items.indexOf(b));
+    return { shown, slot: new Map(shown.map((it, k) => [it.id, k])) };
+  }
+
   function renderBars() {
-    const root = $('#barChart'), table = $('#barTable');
-    root.replaceChildren(); table.replaceChildren();
+    const root = $('#barChart'), table = $('#barTable'), legend = $('#barLegend');
+    root.replaceChildren(); table.replaceChildren(); legend.replaceChildren();
+
+    const { shown, slot } = chartSeries();
+    const OTHER = shown.length;                                   // '기타'는 마지막 계열
+    const colorOf = s => s === OTHER ? 'var(--vc-other)' : `var(--vc-s${s + 1})`;
+
+    // 월별·계열별 금액 (쌓는 순서 = 계열 번호 순, 맨 위가 '기타')
     const data = Array.from({ length: 12 }, (_, k) => {
-      const m = k + 1;
-      const rows = active().filter(i => paidIn(i, m)).map(i => ({ name: i.name, amt: amountIn(i, calYear, m) }));
-      return { m, rows, total: rows.reduce((s, r) => s + r.amt, 0) };
+      const m = k + 1, by = new Map();
+      for (const i of active()) {
+        if (!paidIn(i, m)) continue;
+        const amt = amountIn(i, calYear, m);
+        if (!(amt > 0)) continue;
+        const s = slot.has(i.id) ? slot.get(i.id) : OTHER, cur = by.get(s) || { amt: 0, n: 0 };
+        cur.amt += amt; cur.n++; by.set(s, cur);
+      }
+      const segs = [...by].map(([s, v]) => ({ s, amt: v.amt, n: v.n })).sort((a, b) => a.s - b.s);
+      return { m, segs, total: segs.reduce((t, x) => t + x.amt, 0) };
     });
     const yearTotal = data.reduce((s, d) => s + d.total, 0);
     $('#barTitle').textContent = `${calYear}년 월별 지출 합계 · 연간 ${won(yearTotal)}`;
 
+    // 이 연도에 실제로 나타나는 계열만 범례·표에 올린다
+    const present = [...new Set(data.flatMap(d => d.segs.map(x => x.s)))].sort((a, b) => a - b);
+    const otherNames = active().filter(i => !slot.has(i.id) && annualOf(i, calYear) > 0).map(i => i.name);
+    const nameOf = s => s === OTHER ? `기타(${otherNames.length}건)` : shown[s].name;
+    for (const s of present) {
+      const li = mk('span'), sw = mk('i', 'vc-sw'); sw.style.background = colorOf(s);
+      li.append(sw, document.createTextNode(nameOf(s)));
+      if (s === OTHER) li.title = otherNames.join(', ');
+      legend.append(li);
+    }
+
     // 표 보기 (그래프의 모든 값에 접근하는 경로)
-    const head = mk('tr'); head.append(mk('th', '', '월'), mk('th', 'num', '합계'));
-    table.append(mk('thead')); table.firstChild.append(head);
+    const head = mk('tr');
+    head.append(mk('th', '', '월'));
+    for (const s of present) head.append(mk('th', 'num', nameOf(s)));
+    head.append(mk('th', 'num', '합계'));
+    const thead = mk('thead'); thead.append(head); table.append(thead);
     const tb = mk('tbody');
-    for (const d of data) { const tr = mk('tr'); tr.append(mk('td', '', `${d.m}월`), mk('td', 'num', won(d.total))); tb.append(tr); }
+    for (const d of data) {
+      const tr = mk('tr'); tr.append(mk('td', '', `${d.m}월`));
+      for (const s of present) { const f = d.segs.find(x => x.s === s); tr.append(mk('td', 'num', f ? won(f.amt) : '-')); }
+      tr.append(mk('td', 'num', won(d.total))); tb.append(tr);
+    }
     table.append(tb);
 
     const max = Math.max(...data.map(d => d.total));
@@ -588,9 +638,12 @@
 
     const showTip = (col, d, pct) => {
       tip.replaceChildren(mk('div', 'h', `${calYear}년 ${d.m}월`), mk('div', 'v', won(d.total)));
-      const rows = d.rows.filter(r => r.amt > 0).sort((a, b) => b.amt - a.amt);
-      for (const r of rows.slice(0, 4)) { const row = mk('div', 'r'); row.append(mk('span', '', r.name), mk('span', '', won(r.amt))); tip.append(row); }
-      if (rows.length > 4) tip.append(mk('div', 'r', `외 ${rows.length - 4}건`));
+      for (const x of d.segs.slice().sort((a, b) => b.amt - a.amt)) {
+        const row = mk('div', 'r'), key = mk('span', 'k'), line = mk('i');
+        line.style.background = colorOf(x.s);
+        key.append(line, document.createTextNode(x.s === OTHER ? `기타 ${x.n}건` : shown[x.s].name));
+        row.append(key, mk('span', '', won(x.amt))); tip.append(row);
+      }
       tip.style.left = '0px'; tip.style.top = '0px'; tip.style.display = 'block';   // 이전 위치가 폭 계산에 영향을 주지 않게 먼저 초기화
       const pr = plot.getBoundingClientRect(), cr = col.getBoundingClientRect();
       const w = tip.offsetWidth, h = tip.offsetHeight;
@@ -603,8 +656,13 @@
       const pct = (d.total / top) * 100;
       const col = mk('div', 'vc-col'); col.tabIndex = 0;
       col.setAttribute('aria-label', `${d.m}월 합계 ${won(d.total)}`);
-      const bar = mk('div', 'vc-bar'); bar.style.height = `${pct}%`; col.append(bar);
-      if (idx === maxIdx) {                                     // 직접 표시는 최댓값 한 곳만
+      const bar = mk('div', 'vc-bar'); bar.style.height = `${pct}%`;
+      for (const x of d.segs) {                                  // 조각 높이는 그달 합계에서 차지하는 비율
+        const seg = mk('div', 'vc-seg');
+        seg.style.height = `${(x.amt / d.total) * 100}%`; seg.style.background = colorOf(x.s); bar.append(seg);
+      }
+      col.append(bar);
+      if (idx === maxIdx) {                                     // 값 직접 표시는 합계가 가장 큰 달 한 곳만
         const val = mk('div', 'vc-val', `${+(d.total / 10000).toFixed(1)}만`);
         val.style.bottom = `calc(${pct}% + 4px)`; col.append(val);
       }
