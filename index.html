@@ -823,9 +823,7 @@
   }
 
   function renderStats() {
-    const a = active(), fx = fixedActive();
-    const ySum = fx.filter(i => i.cycle === 'yearly').reduce((s, i) => s + latestAmount(i), 0);
-    const yN = fx.filter(i => i.cycle === 'yearly').length;
+    const a = active();
     const now = new Date(), yr = now.getFullYear();
     const pm = new Date(yr, now.getMonth() - 1, 1), py = pm.getFullYear(), pmn = pm.getMonth() + 1;     // 전월(1월이면 지난해 12월)
     const prev = monthSpend(py, pmn);
@@ -838,7 +836,7 @@
     const cards = [
       { label: '전월 고정지출', spend: 'fixed', value: won(prev.fixed), sub: `${py}년 ${pmn}월 · ${prev.fixedN}건` },
       { label: '전월 일반지출', spend: 'var', value: won(prev.varSum), sub: `${py}년 ${pmn}월 · ${prev.varN}건` },
-      { label: '연간 고정지출(매년 결제분)', value: won(ySum), sub: `${yN}건` },
+      { label: '전월 종합지출', spend: 'all', value: won(prev.fixed + prev.varSum), sub: `${py}년 ${pmn}월 · 고정 ${prev.fixedN}건 + 일반 ${prev.varN}건` },
       { label: '지출 합계 비교 (전년도 ↔ 올해 현재까지)', cls: 'span2', html: `<div class="cmp2">${bars}</div>`,
         sub: `${last > 0 ? `올해 − 전년도 = ${diffText}` : '전년도 기록 없음'} · ${now.getMonth() + 1}월 ${now.getDate()}일 기준` },
     ];
@@ -852,32 +850,45 @@
   const spDlg = $('#spendDlg');
   function openSpend(kind) {
     const now = new Date(), pm = new Date(now.getFullYear(), now.getMonth() - 1, 1), y = pm.getFullYear(), m = pm.getMonth() + 1;
-    const isFixed = kind === 'fixed', table = $('#spTable'); table.replaceChildren();
-    $('#spTitle').textContent = `${y}년 ${m}월 ${isFixed ? '고정지출' : '일반지출'} 내역`;
-    $('#spMeta').textContent = isFixed ? '그 달에 금액이 기록된 고정 항목입니다. 금액이 큰 순서로 보여 줍니다.' : '그 달 날짜로 입력한 일반지출입니다. 최근 날짜가 위에 옵니다.';
-    const head = mk('tr'), cols = isFixed ? ['항목', '분류'] : ['날짜', '항목', '분류', '메모'];
-    cols.forEach(c => head.append(mk('th', '', c))); head.append(mk('th', 'num', '금액'));
+    const table = $('#spTable'); table.replaceChildren();
+    const label = { fixed: '고정지출', var: '일반지출', all: '종합지출' }[kind];
+    $('#spTitle').textContent = `${y}년 ${m}월 ${label} 내역`;
+    $('#spMeta').textContent = { fixed: '그 달에 금액이 기록된 고정 항목입니다. 매년 결제하는 항목은 결제하는 달에 들어갑니다. 금액이 큰 순서입니다.',
+      var: '그 달 날짜로 입력한 일반지출입니다. 최근 날짜가 위에 옵니다.',
+      all: '고정지출과 일반지출을 합친 그 달의 모든 지출입니다. 금액이 큰 순서입니다.' }[kind];
+    const cols = { fixed: ['항목', '분류'], var: ['날짜', '항목', '분류', '메모'], all: ['구분', '항목', '분류'] }[kind];
+    const head = mk('tr'); cols.forEach(c => head.append(mk('th', '', c))); head.append(mk('th', 'num', '금액'));
     const th = mk('thead'); th.append(head); table.append(th);
-    const tb = mk('tbody'); let total = 0, n = 0, missing = [];
-    if (isFixed) {
-      const f = monthFixed(y, m); missing = f.missing;
-      for (const x of f.rows.sort((a, b) => b.amt - a.amt || ko(a.it.name, b.it.name))) {
-        const nb = mk('button', 'link', x.it.name); nb.type = 'button'; nb.title = '이 항목의 월별 내역 보기';
-        nb.addEventListener('click', () => { spDlg.close(); openDetail(x.it); });
-        const nt = mk('td'); nt.append(nb);
-        const tr = mk('tr'); tr.append(nt, mk('td', '', x.it.category || '미분류'), mk('td', 'num', won(x.amt))); tb.append(tr);
-        total += x.amt; n++;
+    const f = kind !== 'var' ? monthFixed(y, m) : { rows: [], missing: [] };
+    const v = kind !== 'fixed' ? monthVar(y, m) : [];
+    const link = it => {                                      // 고정 항목 이름을 누르면 월별 상세로 이어진다
+      const nb = mk('button', 'link', it.name); nb.type = 'button'; nb.title = '이 항목의 월별 내역 보기';
+      nb.addEventListener('click', () => { spDlg.close(); openDetail(it); });
+      const td = mk('td'); td.append(nb); return td;
+    };
+    const tb = mk('tbody'); let total = 0, fixedSum = 0, varSum = 0;
+    if (kind === 'var') {
+      for (const r of v.slice().sort((a, b) => b.date.localeCompare(a.date) || b.amount - a.amount)) {
+        const tr = mk('tr'); tr.append(mk('td', '', r.date), mk('td', '', r.name), mk('td', '', r.category || '미분류'), mk('td', '', r.memo), mk('td', 'num', won(r.amount))); tb.append(tr);
+        total += r.amount;
       }
     } else {
-      for (const r of monthVar(y, m).sort((a, b) => b.date.localeCompare(a.date) || b.amount - a.amount)) {
-        const tr = mk('tr'); tr.append(mk('td', '', r.date), mk('td', '', r.name), mk('td', '', r.category || '미분류'), mk('td', '', r.memo), mk('td', 'num', won(r.amount))); tb.append(tr);
-        total += r.amount; n++;
+      const all = f.rows.map(x => ({ kind: '고정지출', it: x.it, name: x.it.name, cat: x.it.category, amt: x.amt }));
+      if (kind === 'all') for (const r of v) all.push({ kind: '일반지출', name: r.name, cat: r.category, amt: r.amount });
+      for (const x of all.sort((a, b) => b.amt - a.amt || ko(a.name, b.name))) {
+        const tr = mk('tr');
+        if (kind === 'all') tr.append(mk('td', '', x.kind));
+        tr.append(x.it ? link(x.it) : mk('td', '', x.name), mk('td', '', x.cat || '미분류'), mk('td', 'num', won(x.amt))); tb.append(tr);
+        total += x.amt; if (x.it) fixedSum += x.amt; else varSum += x.amt;
       }
     }
+    const n = tb.children.length;
     if (!n) { const tr = mk('tr'), td = mk('td', 'hint', '이 달에 기록된 내역이 없습니다.'); td.colSpan = cols.length + 1; tr.append(td); tb.append(tr); }
     table.append(tb);
-    $('#spSummary').textContent = `합계 ${won(total)} · ${n}건`;
-    $('#spMissing').textContent = missing.length ? `이 달 금액이 아직 기록되지 않은 항목: ${missing.map(i => i.name).join(', ')} (금액을 입력하면 이 내역에 포함됩니다)` : '';
+    $('#spSummary').textContent = kind === 'all'
+      ? `고정지출 ${won(fixedSum)} + 일반지출 ${won(varSum)} = 합계 ${won(total)} · ${n}건`
+      : `합계 ${won(total)} · ${n}건`;
+    $('#spMissing').textContent = f.missing.length ? `이 달 금액이 아직 기록되지 않은 고정 항목: ${f.missing.map(i => i.name).join(', ')} (금액을 입력하면 이 내역에 포함됩니다)` : '';
     if (!spDlg.open) spDlg.showModal();
   }
   $('#stats').addEventListener('click', e => { const c = e.target.closest('[data-spend]'); if (c) openSpend(c.dataset.spend); });
