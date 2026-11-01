@@ -14,8 +14,12 @@
       --accent:#7b9bff; --accent-weak:#232c4a; --danger:#ff7676; --ok:#4cd08d;}
   }
   *{box-sizing:border-box}
+  /* 숫자(0~9, 쉼표, 마침표)만 모든 숫자 폭이 같은 글꼴로 그린다. 한글 글꼴은 숫자 폭이 제각각(1은 좁고 0은 넓음)이라
+     같은 단위의 금액이 서로 다른 크기로 보이던 문제를 막는다. 한글·기호는 아래 기본 글꼴 순서를 그대로 따른다. */
+  @font-face{font-family:"Dodo Num";unicode-range:U+0030-0039,U+002C,U+002E;
+    src:local("Arial"),local("Helvetica Neue"),local("Helvetica"),local("Segoe UI"),local("Roboto"),local("Liberation Sans")}
   body{margin:0;background:var(--bg);color:var(--text);
-    font:15px/1.5 -apple-system,"Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",sans-serif}
+    font:15px/1.5 "Dodo Num",-apple-system,"Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",sans-serif;font-kerning:none}
   .wrap{max-width:960px;margin:0 auto;padding:20px 16px 60px}
   h1{font-size:20px;margin:0 0 16px}
   h2{font-size:16px;margin:0 0 12px}
