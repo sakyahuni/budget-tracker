@@ -132,6 +132,13 @@
   .dt-body{padding:16px}
   .dt-in{width:96px;padding:4px 6px;text-align:right}
   #dtMeta{white-space:pre-line}
+  #csvDlg{max-width:760px}
+  .csvgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;align-items:end}
+  .csvgrid .wide{grid-column:1/-1}
+  #csvDlg fieldset{border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin:0;min-width:0}
+  #csvDlg legend{font-size:12px;color:var(--muted);padding:0 4px}
+  #csvDlg label.inl{display:inline-flex;flex-direction:row;align-items:center;gap:6px;color:var(--text);font-size:13px;margin:2px 12px 2px 0;flex-wrap:wrap}
+  #csvDlg .cap{color:var(--muted);font-size:12px}
   #dtTable{min-width:0;font-size:13px}
   #dtTable th,#dtTable td{white-space:nowrap;padding:8px 6px}
   .vc-mode{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-top:8px}
@@ -178,7 +185,9 @@
           <button class="small" id="exportJson" title="지금 데이터 전체(고정지출·상시지출)의 사본을 JSON 파일로 내려받습니다. 이후 변경은 반영되지 않는 백업입니다.">백업 내려받기 (JSON)</button>
           <button class="small" id="exportCsv" title="엑셀에서 분석할 수 있도록 한 줄에 한 번의 지출로 내려받습니다. 다시 가져올 수는 없습니다.">엑셀용 내려받기 (CSV)</button>
           <button class="small" id="importBtn" title="JSON 파일의 내용을 한 번 읽어 옵니다. 확인창에서 현재 데이터를 대체할지, 덧붙일지 고릅니다.">파일에서 가져오기 (JSON)</button>
+          <button class="small" id="csvImportBtn" title="은행·요금 조회에서 받은 CSV(예: 주유 거래내역, 요금 고지 내역)를 열을 골라 가져옵니다.">표(CSV)에서 가져오기</button>
           <input type="file" id="importFile" accept="application/json" class="hidden">
+          <input type="file" id="csvPick" accept=".csv,text/csv,text/plain" class="hidden">
         </div>
       </div>
       <div class="row between" style="margin-top:8px">
@@ -380,6 +389,73 @@
     <div class="hint hidden" id="dtEditHint" style="margin-bottom:8px">월별 금액을 고치면 바로 저장됩니다. 요금제가 바뀐 경우 새 금액을 넣고 ↓를 누르면 그 달부터 아래 달에 모두 적용됩니다. 0을 넣으면 그 달은 중단(0원)이고, 비우면 기본 금액(없으면 미기록)으로 돌아갑니다.</div>
     <div class="scroll"><table id="dtTable"></table></div>
     <div class="hint" id="dtSummary" style="margin-top:8px"></div>
+  </div>
+</dialog>
+
+<dialog id="csvDlg" aria-labelledby="csvTitle">
+  <div class="dt-body">
+    <div class="row between">
+      <h2 id="csvTitle" style="margin:0">CSV에서 가져오기</h2>
+      <button type="button" class="small" id="csvClose">닫기</button>
+    </div>
+    <div class="hint" id="csvInfo" style="margin-top:4px"></div>
+
+    <div class="csvgrid" style="margin-top:12px">
+      <fieldset class="wide">
+        <legend>가져올 곳</legend>
+        <label class="inl"><input type="radio" name="csvTarget" value="rec" checked> 상시지출(건별) <span class="cap">주유 거래내역처럼 날짜별 지출</span></label>
+        <label class="inl"><input type="radio" name="csvTarget" value="fix"> 고정지출의 월별 금액 <span class="cap">가스·전기·통신 요금 고지 내역</span></label>
+      </fieldset>
+
+      <label>날짜 열 <select id="csvDate"></select></label>
+      <label>금액 열 <select id="csvAmt"></select></label>
+
+      <fieldset class="wide" id="csvRecBox">
+        <legend>상시지출 설정</legend>
+        <div class="csvgrid">
+          <div class="wide">
+            <label class="inl"><input type="radio" name="csvNameMode" value="col" checked> 항목명을 열에서 가져오기 <select id="csvNameCol"></select></label>
+            <label class="inl"><input type="radio" name="csvNameMode" value="text"> 모든 줄에 같은 항목명 직접 입력 <input id="csvNameText" placeholder="예: 주유비" style="width:140px"></label>
+          </div>
+          <label>분류 <input id="csvCat" list="cats" placeholder="예: 교통"></label>
+          <label>메모로 쓸 열 <select id="csvMemoCol"></select></label>
+        </div>
+      </fieldset>
+
+      <fieldset class="wide hidden" id="csvFixBox">
+        <legend>고정지출 설정</legend>
+        <div class="csvgrid">
+          <label>금액을 넣을 항목 <select id="csvTargetItem"></select></label>
+          <label class="newonly">새 항목 이름 <input id="csvNewName" placeholder="예: 가스요금"></label>
+          <label class="newonly">분류 <input id="csvNewCat" list="cats" placeholder="예: 공과금"></label>
+          <label class="newonly">결제일 <select id="csvNewDay"></select></label>
+        </div>
+        <div class="hint">같은 달에 여러 줄이 있으면 합계를 넣습니다. 날짜에 일이 없으면 달만 사용합니다.</div>
+      </fieldset>
+
+      <fieldset class="wide">
+        <legend>가져올 줄 조건 (선택)</legend>
+        <div class="csvgrid">
+          <label>이 열이 <select id="csvFilterCol"></select></label>
+          <label>이 값인 줄만 <select id="csvFilterVal"></select></label>
+          <label>이 날짜 이후만 <input type="date" id="csvSince"></label>
+        </div>
+      </fieldset>
+
+      <div class="wide">
+        <label class="inl"><input type="checkbox" id="csvAbs" checked> 금액의 부호(−)는 무시하고 양수로 가져오기</label>
+        <label class="inl"><input type="checkbox" id="csvSkipDup" checked> 이미 있는 내용은 건너뛰기 <span class="cap">상시지출: 같은 날짜·항목·금액 / 월별 금액: 이미 금액이 있는 달</span></label>
+      </div>
+    </div>
+
+    <div id="csvSummary" class="hint" style="margin:12px 0 6px"></div>
+    <div id="csvBad" class="hint" style="color:var(--danger)"></div>
+    <div class="scroll"><table id="csvPreview"></table></div>
+
+    <div class="row" style="margin-top:12px">
+      <button type="button" class="primary" id="csvGo">가져오기</button>
+      <span class="hint" id="csvResult"></span>
+    </div>
   </div>
 </dialog>
 
@@ -1335,6 +1411,212 @@
     download(downloadName('json'), serialize(), 'application/json');   // 고정지출 + 상시지출
     lset(RK.last, isoDate(new Date())); renderRemind();                // 백업을 받았으니 이번 달 알림은 끈다
   };
+
+  // ---- CSV 가져오기 (은행·요금 조회에서 받은 임의의 CSV) --------------------------------
+  // 열 이름이 파일마다 다르므로 화면에서 날짜·금액 열을 고르게 하고, 상시지출(건별) 또는 고정지출의 월별 금액으로 넣는다.
+  // 한글 은행 파일은 EUC-KR(CP949)인 경우가 많아, UTF-8로 읽다 실패하면 EUC-KR로 다시 읽는다.
+  const csvDlg = $('#csvDlg');
+  const csv = { head: [], body: [], name: '' };
+
+  function decodeCsv(buf) {
+    try { return new TextDecoder('utf-8', { fatal: true }).decode(buf); }
+    catch { return new TextDecoder('euc-kr').decode(buf); }
+  }
+  // 쉼표·탭·세미콜론 구분과 큰따옴표로 감싼 값(안의 쉼표·줄바꿈 포함)을 읽는다.
+  function parseCsv(text) {
+    text = text.replace(/^﻿/, '');
+    const first = text.split(/\r?\n/, 1)[0] || '';
+    const delim = [',', '\t', ';'].map(d => [d, first.split(d).length]).sort((a, b) => b[1] - a[1])[0][0];
+    const rows = []; let row = [], cur = '', q = false;
+    const endRow = () => { row.push(cur); cur = ''; if (row.some(x => x.trim() !== '')) rows.push(row); row = []; };
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (q) { if (c === '"') { if (text[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += c; }
+      else if (c === '"') q = true;
+      else if (c === delim) { row.push(cur); cur = ''; }
+      else if (c === '\n' || c === '\r') { if (c === '\r' && text[i + 1] === '\n') i++; endRow(); }
+      else cur += c;
+    }
+    if (cur !== '' || row.length) endRow();
+    return rows.map(r => r.map(x => x.trim()));
+  }
+  // 2026.10.16 14:11:29 / 2026-10-16 / 2026/10/16 / 20261016 / 2026년 10월 / 2026.10 형태를 읽는다. 일이 없으면 d는 null.
+  function parseDate(str) {
+    const t = String(str ?? '').trim();
+    let m = t.match(/^(\d{4})(\d{2})(\d{2})(\d{6})?$/);
+    if (!m) m = t.match(/(\d{4})\D+(\d{1,2})(?:\D+(\d{1,2}))?/);
+    if (!m) return null;
+    const y = +m[1], mo = +m[2], d = m[3] ? +m[3] : null;
+    if (y < 1990 || y > 2100 || mo < 1 || mo > 12 || (d !== null && (d < 1 || d > 31))) return null;
+    return { y, m: mo, d };
+  }
+  // ₩ 174,740 / 47,730원 / -5,000 / (5,000) 같은 표기를 숫자로 읽는다. 읽지 못하면 null.
+  function parseAmount(str) {
+    const t = String(str ?? '').replace(/[,\s₩원]/g, '');
+    if (!/^[-+(]?\d+(\.\d+)?\)?$/.test(t)) return null;
+    const n = parseFloat(t.replace(/[-+()]/g, ''));
+    return /^-|^\(/.test(t) ? -n : n;
+  }
+
+  const csvTarget = () => document.querySelector('input[name=csvTarget]:checked').value;       // 'rec' | 'fix'
+  function colOptions(sel, withNone) {
+    sel.replaceChildren();
+    if (withNone) { const o = mk('option', '', '(사용 안 함)'); o.value = ''; sel.append(o); }
+    csv.head.forEach((h, i) => { const o = mk('option', '', h || `${i + 1}번째 열`); o.value = String(i); sel.append(o); });
+  }
+  const guessCol = re => csv.head.findIndex(h => re.test(h));
+
+  function csvOpen(fileName, rows) {
+    csv.name = fileName; csv.head = rows[0]; csv.body = rows.slice(1);
+    $('#csvInfo').textContent = `${fileName} · 데이터 ${csv.body.length}줄 · 첫 줄은 제목으로 읽었습니다. 아래에서 열을 골라 주세요.`;
+    for (const id of ['csvDate', 'csvAmt', 'csvNameCol']) colOptions($('#' + id), false);
+    colOptions($('#csvMemoCol'), true); colOptions($('#csvFilterCol'), true);
+    const gd = guessCol(/일시|일자|날짜|거래일|납기|청구|년월|date/i), ga = guessCol(/출금|금액|합계|amount|^계$/i),
+          gn = guessCol(/사용처|가맹점|상호|적요|내용|항목|거래처|name/i);
+    if (gd >= 0) $('#csvDate').value = String(gd);
+    if (ga >= 0) $('#csvAmt').value = String(ga);
+    if (gn >= 0) $('#csvNameCol').value = String(gn);
+    document.querySelector(`input[name=csvNameMode][value=${gn >= 0 ? 'col' : 'text'}]`).checked = true;
+    $('#csvMemoCol').value = ''; $('#csvNameText').value = ''; $('#csvCat').value = '';
+    $('#csvFilterCol').value = ''; $('#csvSince').value = '';
+    // 고정지출 대상 항목 목록과 새 항목의 결제일
+    const ts = $('#csvTargetItem'); ts.replaceChildren();
+    for (const it of items) { const o = mk('option', '', it.name); o.value = it.id; ts.append(o); }
+    const n = mk('option', '', '+ 새 고정 항목 만들기'); n.value = '__new'; ts.append(n);
+    const nd = $('#csvNewDay'); nd.replaceChildren();
+    for (let d = 1; d <= 31; d++) { const o = mk('option', '', `${d}일`); o.value = String(d); nd.append(o); }
+    document.querySelector('input[name=csvTarget][value=rec]').checked = true;
+    $('#csvResult').textContent = ''; $('#csvGo').disabled = false;
+    csvFilterVals(); csvSync(); csvDlg.showModal();
+  }
+  function csvFilterVals() {                                 // 조건 열을 고르면 그 열에 있는 값들을 목록으로 보여 준다
+    const sel = $('#csvFilterVal'), col = $('#csvFilterCol').value; sel.replaceChildren();
+    if (col === '') { sel.disabled = true; return; }
+    sel.disabled = false;
+    const vals = [...new Set(csv.body.map(r => (r[+col] ?? '')))].slice(0, 60);
+    for (const v of vals) { const o = mk('option', '', v === '' ? '(빈 칸)' : v); o.value = v; sel.append(o); }
+  }
+  function csvSync() {                                       // 가져올 곳에 따라 필요한 설정만 보여 준다
+    const t = csvTarget();
+    $('#csvRecBox').classList.toggle('hidden', t !== 'rec');
+    $('#csvFixBox').classList.toggle('hidden', t !== 'fix');
+    const isNew = $('#csvTargetItem').value === '__new';
+    document.querySelectorAll('#csvFixBox .newonly').forEach(e => e.classList.toggle('hidden', !isNew));
+    csvPreview();
+  }
+
+  // 미리보기와 실제 가져오기가 같은 결과를 쓰도록 계산을 한 곳에 둔다.
+  function csvBuild() {
+    const t = csvTarget(), di = +$('#csvDate').value, ai = +$('#csvAmt').value;
+    const fc = $('#csvFilterCol').value, fv = $('#csvFilterVal').value, since = $('#csvSince').value;
+    const abs = $('#csvAbs').checked, skipDup = $('#csvSkipDup').checked;
+    const nameMode = document.querySelector('input[name=csvNameMode]:checked').value;
+    const nameCol = +$('#csvNameCol').value, nameText = $('#csvNameText').value.trim();
+    const memoCol = $('#csvMemoCol').value, cat = $('#csvCat').value.trim();
+    const rows = [], bad = []; let filtered = 0;
+    csv.body.forEach((r, idx) => {
+      const line = idx + 2;                                   // 제목 줄이 1번째 줄
+      if (fc !== '' && (r[+fc] ?? '') !== fv) { filtered++; return; }
+      const rawAmt = (r[ai] ?? '').trim();
+      if (rawAmt === '') { filtered++; return; }              // 입금/출금이 열로 나뉜 파일의 빈 칸
+      const dt = parseDate(r[di]);
+      if (!dt) { bad.push(`${line}번째 줄: 날짜를 읽지 못했습니다 (${r[di] ?? ''})`); return; }
+      let amt = parseAmount(rawAmt);
+      if (amt === null) { bad.push(`${line}번째 줄: 금액을 읽지 못했습니다 (${rawAmt})`); return; }
+      if (abs) amt = Math.abs(amt);
+      if (!(amt > 0)) { filtered++; return; }
+      const date = `${dt.y}-${pad2(dt.m)}-${pad2(dt.d || 1)}`;
+      if (since && date < since) { filtered++; return; }
+      const name = nameMode === 'col' ? (r[nameCol] ?? '').trim() : nameText;
+      if (t === 'rec' && !name) { bad.push(`${line}번째 줄: 항목명이 비어 있습니다`); return; }
+      rows.push({ line, date, ym: date.slice(0, 7), amt, name, cat, memo: memoCol === '' ? '' : (r[+memoCol] ?? '').trim() });
+    });
+    const add = [], dup = [];
+    if (t === 'rec') {
+      const have = new Map();                                 // 이미 있는 상시지출을 (날짜|항목|금액)별 개수로 센다
+      for (const r of records) { const k = `${r.date}|${r.name}|${r.amount}`; have.set(k, (have.get(k) || 0) + 1); }
+      for (const x of rows) {
+        const k = `${x.date}|${x.name}|${x.amt}`;
+        if (skipDup && have.get(k) > 0) { have.set(k, have.get(k) - 1); dup.push(x); } else add.push(x);
+      }
+      return { t, add, dup, bad, filtered, total: rows.length };
+    }
+    const sums = new Map();                                   // 고정지출: 같은 달은 합계
+    for (const x of rows) sums.set(x.ym, (sums.get(x.ym) || 0) + x.amt);
+    const it = items.find(i => i.id === $('#csvTargetItem').value);
+    for (const [ym, amt] of [...sums].sort()) {
+      const cur = it && it.overrides && typeof it.overrides[ym] === 'number' ? it.overrides[ym] : null;
+      if (cur !== null && skipDup) dup.push({ ym, amt, cur }); else add.push({ ym, amt, cur });
+    }
+    return { t, add, dup, bad, filtered, total: sums.size, it };
+  }
+
+  function csvPreview() {
+    if (!csvDlg.open && !csv.head.length) return;
+    const b = csvBuild(), unit = b.t === 'rec' ? '건' : '개월';
+    const sum = b.add.reduce((s, x) => s + x.amt, 0);
+    $('#csvSummary').textContent = `${csv.body.length}줄 중 가져올 것 ${b.add.length}${unit}(합계 ${won(sum)}) · 이미 있어 건너뜀 ${b.dup.length}${unit} · 조건·빈 금액으로 제외 ${b.filtered}줄 · 읽지 못한 줄 ${b.bad.length}줄`;
+    $('#csvBad').textContent = b.bad.slice(0, 4).join('\n') + (b.bad.length > 4 ? `\n… 외 ${b.bad.length - 4}줄` : '');
+    $('#csvBad').style.whiteSpace = 'pre-line';
+    const table = $('#csvPreview'); table.replaceChildren();
+    const head = mk('tr'), cols = b.t === 'rec' ? ['날짜', '항목', '분류', '메모'] : ['월', '기존 금액'];
+    cols.forEach(c => head.append(mk('th', '', c))); head.append(mk('th', 'num', '금액'));
+    const th = mk('thead'); th.append(head); table.append(th);
+    const tb = mk('tbody');
+    for (const x of b.add.slice(0, 8)) {
+      const tr = mk('tr');
+      if (b.t === 'rec') tr.append(mk('td', '', x.date), mk('td', '', x.name), mk('td', '', x.cat || '미분류'), mk('td', '', x.memo));
+      else tr.append(mk('td', '', x.ym), mk('td', '', x.cur === null ? '-' : `${won(x.cur)} → 덮어씀`));
+      tr.append(mk('td', 'num', won(x.amt))); tb.append(tr);
+    }
+    if (b.add.length > 8) { const tr = mk('tr'); const td = mk('td', 'hint', `… 외 ${b.add.length - 8}${unit}`); td.colSpan = cols.length + 1; tr.append(td); tb.append(tr); }
+    table.append(tb);
+    $('#csvGo').disabled = b.add.length === 0;
+  }
+
+  function csvGo() {
+    const b = csvBuild();
+    if (!b.add.length) return;
+    if (b.t === 'rec') {
+      for (const x of b.add) records.push({ id: uid(), date: x.date, name: x.name, category: x.cat, amount: x.amt, memo: x.memo });
+    } else {
+      let it = b.it;
+      if (!it) {                                              // 새 고정 항목
+        const nm = $('#csvNewName').value.trim();
+        if (!nm) { $('#csvResult').textContent = '새 항목의 이름을 입력해 주세요.'; return; }
+        it = { id: uid(), name: nm, category: $('#csvNewCat').value.trim(), amount: 0, cycle: 'monthly', month: 1,
+          day: +$('#csvNewDay').value || 1, memo: '', active: true, overrides: {} };
+        items.push(it);
+      }
+      it.overrides = { ...(it.overrides || {}) };
+      for (const x of b.add) it.overrides[x.ym] = x.amt;
+    }
+    const n = b.add.length, unit = b.t === 'rec' ? '건' : '개월';
+    save();
+    $('#csvGo').disabled = true;
+    $('#csvResult').textContent = `${n}${unit}을 가져왔습니다. (합계 ${won(b.add.reduce((s, x) => s + x.amt, 0))})`;
+    csv.head = []; csv.body = [];                             // 같은 파일을 다시 가져오는 실수를 막는다
+  }
+
+  $('#csvImportBtn').onclick = () => $('#csvPick').click();
+  $('#csvPick').addEventListener('change', async e => {
+    const file = e.target.files[0]; if (!file) return;
+    try {
+      const rows = parseCsv(decodeCsv(await file.arrayBuffer()));
+      if (rows.length < 2 || rows[0].length < 2) throw new Error('데이터가 없거나 열을 나눌 수 없습니다.');
+      csvOpen(file.name, rows);
+    } catch (err) { alert('CSV 파일을 읽을 수 없습니다: ' + err.message); }
+    e.target.value = '';
+  });
+  $('#csvClose').onclick = () => csvDlg.close();
+  csvDlg.addEventListener('click', ev => { if (ev.target === csvDlg) csvDlg.close(); });
+  $('#csvGo').onclick = csvGo;
+  document.querySelectorAll('input[name=csvTarget]').forEach(r => r.addEventListener('change', csvSync));
+  $('#csvTargetItem').addEventListener('change', csvSync);
+  $('#csvFilterCol').addEventListener('change', () => { csvFilterVals(); csvPreview(); });
+  for (const id of ['csvDate', 'csvAmt', 'csvNameCol', 'csvNameText', 'csvCat', 'csvMemoCol', 'csvFilterVal', 'csvSince', 'csvAbs', 'csvSkipDup', 'csvNewName', 'csvNewCat', 'csvNewDay'])
+    $('#' + id).addEventListener('input', csvPreview);
+  document.querySelectorAll('input[name=csvNameMode]').forEach(r => r.addEventListener('change', csvPreview));
 
   // ---- 백업 알림 ----------------------------------------------------------------
   // 서버가 없는 웹페이지라 앱을 닫아 둔 상태에서는 알릴 수 없다. 그래서 (1) 매월 1일부터 앱을 열면 상단에 배너를 보여 주고,
