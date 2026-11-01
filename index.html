@@ -1304,7 +1304,9 @@
     a.href = URL.createObjectURL(new Blob([text], { type }));
     a.download = name; a.click(); URL.revokeObjectURL(a.href);
   }
-  $('#exportJson').onclick = () => download('fixed-expenses.json', serialize(), 'application/json');   // 고정지출 + 지출 기록
+  // 내려받는 파일 이름: dodo-budget-날짜(YYYYMMDD). 예) dodo-budget-20261102.json
+  const downloadName = ext => `dodo-budget-${isoDate(new Date()).replace(/-/g, '')}.${ext}`;
+  $('#exportJson').onclick = () => download(downloadName('json'), serialize(), 'application/json');   // 고정지출 + 상시지출
   // CSV: 한 줄에 한 번의 지출. 고정지출은 금액이 있는 달마다, 상시지출은 건마다 한 줄이다.
   // 금액 열을 더하면 '올해 지출 합계'와 같다(중지한 고정 항목과 기록 없는 달은 앱 계산과 같이 뺀다).
   $('#exportCsv').onclick = () => {
@@ -1323,7 +1325,7 @@
     out.sort((x, y) => x[0].localeCompare(y[0]) || x[1].localeCompare(y[1]) || x[2].localeCompare(y[2], 'ko'));
     const head = ['날짜', '구분', '항목', '분류', '금액', '메모'];
     // 맨 앞의 \uFEFF는 엑셀에서 한글이 깨지지 않게 하는 표시(BOM)다.
-    download('dodo-budget-expenses.csv', '\uFEFF' + [head, ...out].map(r => r.map(q).join(',')).join('\n'), 'text/csv');
+    download(downloadName('csv'), '\uFEFF' + [head, ...out].map(r => r.map(q).join(',')).join('\n'), 'text/csv');
   };
   $('#importBtn').onclick = () => $('#importFile').click();
   $('#importFile').addEventListener('change', async e => {
