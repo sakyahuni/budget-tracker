@@ -77,6 +77,9 @@
   .storage .note{color:var(--muted);font-size:12px;margin-top:4px}
   .storage .tools{margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
   .storage .cap{color:var(--muted);font-size:12px}
+  .storage .where{color:var(--muted);font-size:13px}
+  @media (max-width:520px){.storage .sep{display:none} #storageStatus{display:block;margin-top:2px}}   /* 좁은 화면: 상태를 다음 줄로 */
+  .storage .wedit{border:none;background:none;padding:0 4px;color:var(--muted);cursor:pointer;font-size:13px}
   .storage label.inl{display:inline-flex;flex-direction:row;align-items:center;gap:6px;color:var(--text);font-size:13px}
   .remind{margin-bottom:16px;padding:12px 16px;display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between;
     border:1px solid #e0a100;border-left-width:4px}
@@ -164,7 +167,7 @@
 
   <div class="card storage" id="storage">
     <div class="row between">
-      <div><strong>자동 저장</strong> · <span id="storageStatus"></span></div>
+      <div><strong>자동 저장</strong> <span class="where" id="storageWhere"></span><button type="button" class="wedit" id="whereEdit" title="저장 위치 설명 바꾸기" aria-label="저장 위치 설명 바꾸기">✎</button><span class="sep"> · </span><span id="storageStatus"></span></div>
       <div class="row" id="storageBtns"></div>
     </div>
     <div class="note" id="storageNote"></div>
@@ -1350,6 +1353,14 @@
     $('#remindTitle').textContent = `${now.getMonth() + 1}월 백업 알림`;
     $('#remindMsg').textContent = `이번 달 백업(JSON)을 아직 받지 않았습니다. 마지막 백업: ${last || '기록 없음'}`;
   }
+  // '자동 저장' 옆에 보이는 저장 위치 설명. 브라우저는 폴더 경로를 알려 주지 않으므로 사용자가 적어 두는 설명이며, 이 브라우저에만 저장한다.
+  const WHERE_KEY = 'dodo-budget.locationNote', WHERE_DEFAULT = 'Macmini - iCloud / Numbers 폴더';
+  const whereText = () => { const v = lget(WHERE_KEY); return v === null ? WHERE_DEFAULT : v; };
+  function renderWhere() { const t = whereText().trim(); $('#storageWhere').textContent = t ? `(${t})` : ''; }
+  $('#whereEdit').onclick = () => {
+    const v = prompt('자동 저장 파일이 어디에 있는지 적어 두세요. 화면에 표시만 되며, 비우면 숨겨집니다.', whereText());
+    if (v !== null) { lset(WHERE_KEY, v.trim()); renderWhere(); }
+  };
   $('#remindDo').onclick = () => $('#exportJson').click();
   $('#remindSkip').onclick = () => { lset(RK.skip, isoDate(new Date()).slice(0, 7)); renderRemind(); };
   $('#remindOff').onclick = () => { lset(RK.on, '0'); renderRemind(); };
@@ -1407,7 +1418,7 @@
     e.target.value = '';
   });
 
-  syncCycle(); renderVar(); resetRecForm(); setKind(kind); setMode(barMode, false); render(); renderStorage(); renderRemind(); initFile();
+  syncCycle(); renderVar(); resetRecForm(); setKind(kind); setMode(barMode, false); render(); renderStorage(); renderRemind(); renderWhere(); initFile();
 })();
 </script>
 </body>
