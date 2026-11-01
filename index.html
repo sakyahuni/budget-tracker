@@ -55,6 +55,7 @@
   .month .mh{display:flex;justify-content:space-between;font-weight:600;margin-bottom:6px}
   .month ul{list-style:none;margin:0;padding:0;font-size:13px;color:var(--muted)}
   .month li{display:flex;justify-content:space-between;gap:8px}
+  .month li span:last-child{white-space:nowrap}
   .bar{height:8px;border-radius:4px;background:var(--accent);margin-top:8px;min-width:2px}
   .empty{color:var(--muted);text-align:center;padding:28px 0}
   .hidden{display:none}
@@ -630,7 +631,6 @@
   // 말일 보정: 31일 결제인데 해당 월이 30일까지면 말일로 처리
   // 결제일이 0(상시)이면 0을 돌려준다.
   const dayIn = (it, y, m) => it.day ? Math.min(it.day, new Date(y, m, 0).getDate()) : 0;
-  const dayLabel = (it, y, m) => { const d = dayIn(it, y, m); return d ? `${d}일` : '상시'; };
 
   function nextPayment(it, from) {
     if (!it.day) return null;                 // 날짜가 없는 상시 지출은 '다음 결제'에서 제외
@@ -708,7 +708,7 @@
       const isNow = now.getFullYear() === calYear && now.getMonth() === k;
       return `<div class="month ${isNow ? 'now' : ''}">
         <div class="mh"><span>${m}월</span><span>${won(t)}</span></div>
-        <ul>${list.map(i => `<li><span>${dayLabel(i, calYear, m)} ${esc(i.name)}</span><span>${won(amountIn(i, calYear, m))}</span></li>`).join('') || '<li>없음</li>'}</ul>
+        <ul>${list.map(i => `<li><span>${esc(i.name)}</span><span>${won(amountIn(i, calYear, m))}</span></li>`).join('') || '<li>없음</li>'}</ul>
         <div class="bar" style="width:${(t / max) * 100}%"></div>
       </div>`;
     }).join('');
@@ -1064,21 +1064,18 @@
       + (it.memo ? `\n${it.memo}` : '');                               // 목록에서 뺀 메모는 여기서 보여 준다
     $('#dtYear').textContent = `${dtYear}년`;
     const head = mk('tr');
-    ['월', '날짜'].forEach(t => head.append(mk('th', '', t)));
-    head.append(mk('th', 'num', '금액'), mk('th', '', '구분'));
+    head.append(mk('th', '', '월'), mk('th', 'num', '금액'), mk('th', '', '구분'));      // 납기일(날짜) 열은 두지 않는다
     const thead = mk('thead'); thead.append(head); table.append(thead);
     const tb = mk('tbody'); let total = 0, rec = 0, est = 0;
     for (let m = 1; m <= 12; m++) {
       if (!paidIn(it, m)) continue;
       const isRec = hasOv(it, dtYear, m), blank = isBlank(it, dtYear, m);
       const amt = blank ? 0 : amountIn(it, dtYear, m);
-      const d = dayIn(it, dtYear, m);
       const kind = blank ? '미기록' : !hasVar(it) ? '고정 금액' : isRec ? '기록' : '기본 금액(추정)';
       if (hasVar(it)) { if (isRec) rec++; else if (!blank) est++; }
       total += amt;
       const tr = mk('tr'); if (hasVar(it) && !isRec) tr.style.color = 'var(--muted)';
-      tr.append(mk('td', '', `${m}월`), mk('td', '', d ? `${dtYear}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}` : '상시'),
-        mk('td', 'num', blank ? '-' : won(amt)), mk('td', '', kind));
+      tr.append(mk('td', '', `${m}월`), mk('td', 'num', blank ? '-' : won(amt)), mk('td', '', kind));
       tb.append(tr);
     }
     table.append(tb);
