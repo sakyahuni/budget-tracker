@@ -77,6 +77,11 @@
   .storage .note{color:var(--muted);font-size:12px;margin-top:4px}
   .storage .tools{margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
   .storage .cap{color:var(--muted);font-size:12px}
+  .storage label.inl{display:inline-flex;flex-direction:row;align-items:center;gap:6px;color:var(--text);font-size:13px}
+  .remind{margin-bottom:16px;padding:12px 16px;display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between;
+    border:1px solid #e0a100;border-left-width:4px}
+  .remind .note{color:var(--muted);font-size:12px;margin-top:2px}
+  .remind.hidden{display:none}                       /* .remind의 display:flex가 .hidden을 덮어쓰지 않게 한다 */
   .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:var(--muted)}
   .dot.ok{background:var(--ok)} .dot.warn{background:#e0a100} .dot.err{background:var(--danger)}
   details.wide{border:1px dashed var(--line);border-radius:8px;padding:8px 12px}
@@ -145,6 +150,18 @@
 <div class="wrap">
   <h1>Dodo Budget</h1>
 
+  <div class="card remind hidden" id="backupRemind" role="status">
+    <div>
+      <strong id="remindTitle"></strong>
+      <div class="note" id="remindMsg"></div>
+    </div>
+    <div class="row">
+      <button class="small primary" id="remindDo">백업 내려받기 (JSON)</button>
+      <button class="small" id="remindSkip">이번 달은 건너뛰기</button>
+      <button class="small" id="remindOff">알림 끄기</button>
+    </div>
+  </div>
+
   <div class="card storage" id="storage">
     <div class="row between">
       <div><strong>자동 저장</strong> · <span id="storageStatus"></span></div>
@@ -160,6 +177,10 @@
           <button class="small" id="importBtn" title="JSON 파일의 내용을 한 번 읽어 옵니다. 확인창에서 현재 데이터를 대체할지, 덧붙일지 고릅니다.">파일에서 가져오기 (JSON)</button>
           <input type="file" id="importFile" accept="application/json" class="hidden">
         </div>
+      </div>
+      <div class="row between" style="margin-top:8px">
+        <label class="inl"><input type="checkbox" id="remindOn"> 매월 1일 백업 알림 <span class="cap">(앱을 열었을 때 상단에 표시)</span></label>
+        <button class="small" id="remindIcs" title="매월 1일 오전 9시에 알려 주는 반복 일정 파일(.ics)을 내려받습니다. 캘린더 앱에서 열면 앱을 닫아 둬도 알림이 옵니다.">캘린더에 매월 1일 알림 추가 (.ics)</button>
       </div>
     </div>
   </div>
@@ -393,6 +414,7 @@
     recCache = null;
     cacheLocal();
     render();
+    renderRemind();                      // 처음 데이터가 생기면 백업 알림도 바로 갱신
     // 연결이 정상일 때만 기록한다. 읽기 실패·권한 대기 중에는 원본 파일을 덮어쓰지 않고 dirty 표시만 남긴다.
     if (fileHandle) { setDirty(true); if (fileState === 'connected') queueWrite(); }
   }
@@ -1306,7 +1328,49 @@
   }
   // 내려받는 파일 이름: dodo-budget-날짜(YYYYMMDD). 예) dodo-budget-20261102.json
   const downloadName = ext => `dodo-budget-${isoDate(new Date()).replace(/-/g, '')}.${ext}`;
-  $('#exportJson').onclick = () => download(downloadName('json'), serialize(), 'application/json');   // 고정지출 + 상시지출
+  $('#exportJson').onclick = () => {
+    download(downloadName('json'), serialize(), 'application/json');   // 고정지출 + 상시지출
+    lset(RK.last, isoDate(new Date())); renderRemind();                // 백업을 받았으니 이번 달 알림은 끈다
+  };
+
+  // ---- 백업 알림 ----------------------------------------------------------------
+  // 서버가 없는 웹페이지라 앱을 닫아 둔 상태에서는 알릴 수 없다. 그래서 (1) 매월 1일부터 앱을 열면 상단에 배너를 보여 주고,
+  // (2) 닫아 둬도 알림이 오도록 '매월 1일 반복 일정(.ics)'을 내려받을 수 있게 한다. 설정과 마지막 백업 날짜는 이 브라우저에 저장한다.
+  const RK = { on: 'dodo-budget.remind', last: 'dodo-budget.lastBackup', skip: 'dodo-budget.skipMonth' };
+  const lget = k => { try { return localStorage.getItem(k); } catch { return null; } };
+  const lset = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
+  const remindEnabled = () => lget(RK.on) !== '0';
+  function renderRemind() {
+    const now = new Date(), ym = isoDate(now).slice(0, 7), last = lget(RK.last);
+    $('#remindOn').checked = remindEnabled();
+    const hasData = items.length > 0 || records.length > 0;
+    const show = remindEnabled() && hasData && !(last && last.startsWith(ym)) && lget(RK.skip) !== ym;
+    $('#backupRemind').classList.toggle('hidden', !show);
+    if (!show) return;
+    $('#remindTitle').textContent = `${now.getMonth() + 1}월 백업 알림`;
+    $('#remindMsg').textContent = `이번 달 백업(JSON)을 아직 받지 않았습니다. 마지막 백업: ${last || '기록 없음'}`;
+  }
+  $('#remindDo').onclick = () => $('#exportJson').click();
+  $('#remindSkip').onclick = () => { lset(RK.skip, isoDate(new Date()).slice(0, 7)); renderRemind(); };
+  $('#remindOff').onclick = () => { lset(RK.on, '0'); renderRemind(); };
+  $('#remindOn').onchange = e => { lset(RK.on, e.target.checked ? '1' : '0'); renderRemind(); };
+  setInterval(renderRemind, 60 * 1000);                                           // 앱을 켜 둔 채 달이 바뀌어도 알린다
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) renderRemind(); });
+
+  // 매월 1일 오전 9시 반복 일정(.ics). 시간대를 따로 쓰지 않는 '현지 시각'이라 어느 나라에서 열어도 9시에 울린다.
+  $('#remindIcs').onclick = () => {
+    const d = new Date(), pastNine = d.getDate() > 1 || d.getHours() >= 9;
+    const first = new Date(d.getFullYear(), d.getMonth() + (pastNine ? 1 : 0), 1);      // 첫 알림은 다음 1일
+    const ymd = isoDate(first).replace(/-/g, '');
+    const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+    const ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Dodo Budget//Backup Reminder//KO', 'CALSCALE:GREGORIAN',
+      'BEGIN:VEVENT', 'UID:dodo-budget-backup-reminder@dodo-budget', `DTSTAMP:${stamp}`,
+      `DTSTART:${ymd}T090000`, `DTEND:${ymd}T093000`, 'RRULE:FREQ=MONTHLY;BYMONTHDAY=1',
+      'SUMMARY:Dodo Budget 백업', 'DESCRIPTION:백업 내려받기(JSON)를 눌러 주세요',
+      'BEGIN:VALARM', 'ACTION:DISPLAY', 'DESCRIPTION:Dodo Budget 백업', 'TRIGGER:PT0S', 'END:VALARM',
+      'END:VEVENT', 'END:VCALENDAR'].join('\r\n') + '\r\n';
+    download('dodo-budget-backup-reminder.ics', ics, 'text/calendar;charset=utf-8');
+  };
   // CSV: 한 줄에 한 번의 지출. 고정지출은 금액이 있는 달마다, 상시지출은 건마다 한 줄이다.
   // 금액 열을 더하면 '올해 지출 합계'와 같다(중지한 고정 항목과 기록 없는 달은 앱 계산과 같이 뺀다).
   $('#exportCsv').onclick = () => {
@@ -1343,7 +1407,7 @@
     e.target.value = '';
   });
 
-  syncCycle(); renderVar(); resetRecForm(); setKind(kind); setMode(barMode, false); render(); renderStorage(); initFile();
+  syncCycle(); renderVar(); resetRecForm(); setKind(kind); setMode(barMode, false); render(); renderStorage(); renderRemind(); initFile();
 })();
 </script>
 </body>
