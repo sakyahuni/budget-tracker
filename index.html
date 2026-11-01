@@ -107,6 +107,14 @@
   .vc-empty{color:var(--muted);text-align:center;padding:40px 0}
   details.vc-tbl{margin-top:8px;font-size:13px}
   details.vc-tbl summary{cursor:pointer;color:var(--muted)}
+  /* 항목 이름 링크 + 항목별 지출 내역 창 */
+  button.link{border:none;background:none;padding:0;color:var(--accent);font-weight:700;text-align:left;cursor:pointer}
+  button.link:hover{text-decoration:underline}
+  dialog{width:calc(100% - 32px);max-width:560px;padding:0;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--text)}
+  dialog::backdrop{background:rgba(0,0,0,.45)}
+  .dt-body{padding:16px}
+  #dtTable{min-width:0;font-size:13px}
+  #dtTable th,#dtTable td{white-space:nowrap;padding:8px 6px}
   .vc-mode{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-top:8px}
   .vc-mode button{border:none;border-radius:0;background:none;padding:4px 12px;font-size:13px;color:var(--muted)}
   .vc-mode button[aria-pressed=true]{background:var(--accent-weak);color:var(--accent);font-weight:600}
@@ -246,6 +254,7 @@
         </label>
         <button type="button" class="small" id="recThisMonth">이번 달</button>
         <button type="button" class="small" id="recAll">전체</button>
+        <button type="button" class="small hidden" id="recChip" title="항목 필터 해제"></button>
       </div>
       <div class="hint" id="recSummary"></div>
     </div>
@@ -304,6 +313,24 @@
     </details>
   </section>
 </div>
+
+<dialog id="detail" aria-labelledby="dtTitle">
+  <div class="dt-body">
+    <div class="row between">
+      <h2 id="dtTitle" style="margin:0"></h2>
+      <button type="button" class="small" id="dtClose">닫기</button>
+    </div>
+    <div class="hint" id="dtMeta" style="margin-top:4px"></div>
+    <div class="row" style="margin:12px 0 8px">
+      <button type="button" class="small" id="dtPrev" aria-label="이전 연도">◀</button>
+      <strong id="dtYear"></strong>
+      <button type="button" class="small" id="dtNext" aria-label="다음 연도">▶</button>
+      <button type="button" class="small" id="dtThis">올해</button>
+    </div>
+    <div class="scroll"><table id="dtTable"></table></div>
+    <div class="hint" id="dtSummary" style="margin-top:8px"></div>
+  </div>
+</dialog>
 
 <script>
 (() => {
@@ -639,7 +666,7 @@
     $('#emptyMsg').classList.toggle('hidden', rows.length > 0);
     $('#tbody').innerHTML = rows.map(i => `
       <tr class="${i.active ? '' : 'off'}">
-        <td><strong>${esc(i.name)}</strong>${hasVar(i) ? ' <span class="tag">월별 상이</span>' : ''}${i.memo ? `<div style="color:var(--muted);font-size:12px">${esc(i.memo)}</div>` : ''}</td>
+        <td><button type="button" class="link" data-act="detail" data-id="${i.id}" title="이 항목의 지출 내역 보기">${esc(i.name)}</button>${hasVar(i) ? ' <span class="tag">월별 상이</span>' : ''}${i.memo ? `<div style="color:var(--muted);font-size:12px">${esc(i.memo)}</div>` : ''}</td>
         <td>${i.category ? `<span class="tag">${esc(i.category)}</span>` : ''}</td>
         <td><span class="tag ${i.cycle === 'yearly' ? 'y' : ''}">${i.cycle === 'monthly' ? '매월' : '매년'}</span></td>
         <td>${i.cycle === 'yearly' ? i.month + '월 ' : ''}${i.day ? i.day + '일' : '상시'}</td>
@@ -956,6 +983,7 @@
   $('#tbody').addEventListener('click', e => {
     const b = e.target.closest('button[data-act]'); if (!b) return;
     const it = items.find(i => i.id === b.dataset.id); if (!it) return;
+    if (b.dataset.act === 'detail') { openDetail(it); return; }
     if (b.dataset.act === 'toggle') { it.active = !it.active; save(); }
     else if (b.dataset.act === 'del') {
       if (confirm(`'${it.name}' 항목을 삭제할까요?`)) { items = items.filter(i => i !== it); save(); }
@@ -1002,10 +1030,55 @@
   $('#modeCat').onclick = () => setMode('cat');
   try { if (localStorage.getItem(MODE_KEY) === 'cat') { barMode = 'cat'; } } catch {}
 
+  // ---- 항목별 지출 내역(목록에서 항목 이름을 누르면 열림) ---------------------------
+  // 선택한 고정 항목의 한 해 12개월 지출을 월별로 보여 준다. 월별 금액이 기록된 달은 '기록',
+  // 기록이 없는 달은 기본 금액으로 계산한 '기본 금액(추정)', 월별 금액을 쓰지 않는 항목은 '고정 금액'으로 표시한다.
+  const dlg = $('#detail');
+  let dtId = null, dtYear = thisYear();
+  function openDetail(it) {
+    dtId = it.id; dtYear = thisYear(); renderDetail();
+    if (!dlg.open) dlg.showModal();
+  }
+  function renderDetail() {
+    const it = items.find(i => i.id === dtId);
+    if (!it) { if (dlg.open) dlg.close(); return; }
+    const table = $('#dtTable'); table.replaceChildren();
+    $('#dtTitle').textContent = it.name;
+    $('#dtMeta').textContent = [it.category || '미분류', it.cycle === 'monthly' ? '매월' : `매년 ${it.month}월`,
+      it.day ? `${it.day}일` : '상시', `기본 금액 ${won(it.amount)}`, it.active ? '' : '중지됨'].filter(Boolean).join(' · ');
+    $('#dtYear').textContent = `${dtYear}년`;
+    const head = mk('tr');
+    ['월', '날짜'].forEach(t => head.append(mk('th', '', t)));
+    head.append(mk('th', 'num', '금액'), mk('th', '', '구분'));
+    const thead = mk('thead'); thead.append(head); table.append(thead);
+    const tb = mk('tbody'); let total = 0, rec = 0, est = 0;
+    for (let m = 1; m <= 12; m++) {
+      if (!paidIn(it, m)) continue;
+      const amt = amountIn(it, dtYear, m), isRec = typeof (it.overrides && it.overrides[ymKey(dtYear, m)]) === 'number';
+      const d = dayIn(it, dtYear, m);
+      const kind = !hasVar(it) ? '고정 금액' : isRec ? '기록' : '기본 금액(추정)';
+      if (hasVar(it)) { if (isRec) rec++; else est++; }
+      total += amt;
+      const tr = mk('tr'); if (hasVar(it) && !isRec) tr.style.color = 'var(--muted)';
+      tr.append(mk('td', '', `${m}월`), mk('td', '', d ? `${dtYear}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}` : '상시'),
+        mk('td', 'num', won(amt)), mk('td', '', kind));
+      tb.append(tr);
+    }
+    table.append(tb);
+    $('#dtSummary').textContent = `${dtYear}년 합계 ${won(total)} · 월 평균 ${won(total / 12)}` +
+      (hasVar(it) ? ` · 기록 ${rec}개월, 기본 금액(추정) ${est}개월` : '');
+  }
+  $('#dtClose').onclick = () => dlg.close();
+  dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });          // 창 바깥(어두운 배경)을 누르면 닫힘
+  $('#dtPrev').onclick = () => { dtYear--; renderDetail(); };
+  $('#dtNext').onclick = () => { dtYear++; renderDetail(); };
+  $('#dtThis').onclick = () => { dtYear = thisYear(); renderDetail(); };
+
   // ---- 지출 기록(건별) -------------------------------------------------------
   // 주유비·생필품·식료품처럼 날짜와 금액이 그때그때 달라지는 지출. 항목명이 같은 기록은 월별로 합산되어
   // 달력·그래프·비교에 '상시' 항목으로 나타난다(buildRecItems). 화면 문자열은 모두 textContent로만 넣는다.
   const rf = $('#recForm'), recMonth = $('#recMonth');
+  let recName = '';                                    // 항목 이름으로 거른 상태('' = 전체 항목)
   const todayStr = () => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -1034,18 +1107,23 @@
     if (editingRec) records = records.map(r => r.id === editingRec ? { ...r, ...rec } : r);
     else records.push({ id: uid(), ...rec });
     recMonth.value = rec.date.slice(0, 7);             // 방금 입력한 달을 바로 보여 준다
+    recName = '';                                      // 다른 항목을 입력해도 새 기록이 가려지지 않게 항목 필터는 해제
     resetRecForm(); save();
   });
 
   function renderRecords() {
     const ym = recMonth.value;                         // 비어 있으면 전체
-    const rows = records.filter(r => !ym || r.date.startsWith(ym))
+    const rows = records.filter(r => (!ym || r.date.startsWith(ym)) && (!recName || r.name === recName))
       .sort((a, b) => b.date.localeCompare(a.date) || b.amount - a.amount);
+    const chip = $('#recChip');                        // 항목 필터가 켜져 있으면 해제 버튼을 보여 준다
+    chip.classList.toggle('hidden', !recName); chip.textContent = `항목: ${recName} ✕ 해제`;
     $('#recEmpty').classList.toggle('hidden', rows.length > 0);
     const body = $('#recBody'); body.replaceChildren();
     for (const r of rows) {
       const tr = mk('tr');
-      tr.append(mk('td', '', r.date), mk('td', '', r.name), mk('td', '', r.category || '미분류'), mk('td', '', r.memo),
+      const nameTd = mk('td'), nb = mk('button', 'link', r.name);
+      nb.type = 'button'; nb.dataset.act = 'filter'; nb.dataset.name = r.name; nb.title = '이 항목의 기록만 보기'; nameTd.append(nb);
+      tr.append(mk('td', '', r.date), nameTd, mk('td', '', r.category || '미분류'), mk('td', '', r.memo),
         mk('td', 'num', won(r.amount)));
       const td = mk('td', 'row'); td.style.cssText = 'justify-content:flex-end;flex-wrap:nowrap';
       for (const [act, label, cls] of [['edit', '수정', 'small'], ['del', '삭제', 'small danger']]) {
@@ -1057,7 +1135,8 @@
     for (const r of rows) by.set(r.name, (by.get(r.name) || 0) + r.amount);
     const total = rows.reduce((s, r) => s + r.amount, 0);
     $('#recSummary').textContent = rows.length
-      ? `${ym || '전체'} 합계 ${won(total)} · ` + [...by].sort((a, b) => b[1] - a[1]).map(([n, v]) => `${n} ${won(v)}`).join(' · ')
+      ? `${recName ? recName + ' · ' : ''}${ym || '전체'} 합계 ${won(total)} · ` +
+        (recName ? `${rows.length}건` : [...by].sort((a, b) => b[1] - a[1]).map(([n, v]) => `${n} ${won(v)}`).join(' · '))
       : '';
     const names = new Set(['주유비', '생필품', '식료품', ...records.map(r => r.name)]);
     $('#recNames').replaceChildren(...[...names].map(n => { const o = mk('option'); o.value = n; return o; }));
@@ -1065,9 +1144,13 @@
   recMonth.addEventListener('input', renderRecords);
   $('#recThisMonth').onclick = () => { recMonth.value = todayStr().slice(0, 7); renderRecords(); };
   $('#recAll').onclick = () => { recMonth.value = ''; renderRecords(); };
+  $('#recChip').onclick = () => { recName = ''; renderRecords(); };
 
   $('#recBody').addEventListener('click', e => {
     const b = e.target.closest('button[data-act]'); if (!b) return;
+    if (b.dataset.act === 'filter') {                  // 항목 이름을 누르면 그 항목의 기록만 전 기간에 걸쳐 보여 준다
+      recName = b.dataset.name; recMonth.value = ''; renderRecords(); return;
+    }
     const r = records.find(x => x.id === b.dataset.id); if (!r) return;
     if (b.dataset.act === 'del') {
       if (confirm(`${r.date} ${r.name} ${won(r.amount)} 기록을 삭제할까요?`)) { records = records.filter(x => x !== r); save(); }
