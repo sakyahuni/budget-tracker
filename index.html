@@ -177,7 +177,7 @@
           <label style="flex-direction:row;align-items:center;gap:8px">연도
             <select id="varYear"></select>
           </label>
-          <span class="hint">비워 두면 기본 금액이 적용됩니다.</span>
+          <span class="hint">비워 두면 기본 금액이 적용되며, 기본 금액이 0원이면 그 달은 빈 칸(미기록)으로 남습니다.</span>
         </div>
         <div class="mamt" id="varInputs"></div>
       </details>
@@ -276,7 +276,7 @@
     </div>
     <div class="vc-box">
       <h3 id="barTitle"></h3>
-      <div class="hint">막대의 색은 선택한 기준(항목 또는 분류), 전체 높이는 그달의 합계입니다. 기록이 없는 달은 기본 금액 기준입니다. 막대에 마우스를 올리거나 키보드로 이동하면 금액이 보입니다.</div>
+      <div class="hint">막대의 색은 선택한 기준(항목 또는 분류), 전체 높이는 그달의 합계입니다. 월별 금액이 기록되지 않은 달은 기본 금액이 있으면 그 금액, 0원이면 빈 칸입니다. 막대에 마우스를 올리거나 키보드로 이동하면 금액이 보입니다.</div>
       <div class="vc-mode" role="group" aria-label="색 구분 기준">
         <button type="button" id="modeItem" aria-pressed="true">항목별</button>
         <button type="button" id="modeCat" aria-pressed="false">분류별</button>
@@ -596,6 +596,16 @@
     ? Array.from({ length: 12 }, (_, k) => amountIn(it, y, k + 1)).reduce((s, v) => s + v, 0)
     : amountIn(it, y, it.month);
   const monthlyEq = (it, y = thisYear()) => annualOf(it, y) / 12;
+  // 월별 금액을 기록해 쓰는 항목은 기본 금액을 0원으로 두면, 기록이 없는 달을 추정하지 않고 빈 칸(미기록)으로 둔다.
+  // (지출 기록에서 환산한 항목은 항상 이 방식이다. 기본 금액이 0보다 크면 지금처럼 그 금액으로 채운다.)
+  const hasOv = (it, y, m) => typeof (it.overrides && it.overrides[ymKey(y, m)]) === 'number';
+  const blankStyle = it => !!it.virtual || (hasVar(it) && it.amount === 0);
+  const isBlank = (it, y, m) => blankStyle(it) && !hasOv(it, y, m);
+  // 기록이 있는 달만의 평균 (빈 칸인 달은 제외)
+  const recAvg = (it, y = thisYear()) => {
+    const n = Array.from({ length: 12 }, (_, k) => k + 1).filter(m => hasOv(it, y, m)).length;
+    return n ? annualOf(it, y) / n : 0;
+  };
   // 지출 기록은 '월별 금액만 있는 상시 항목'으로 환산해 두면, 달력·그래프·비교가 기존 계산을 그대로 쓴다.
   // 같은 이름의 기록은 한 항목으로 묶이고, 분류는 가장 최근 기록의 것을 따른다.
   function buildRecItems() {
@@ -645,12 +655,13 @@
     const annual = a.reduce((s, i) => s + annualOf(i, yr), 0);
     const now = new Date(), thisM = now.getMonth() + 1;
     const thisMonthTotal = a.filter(i => paidIn(i, thisM)).reduce((s, i) => s + amountIn(i, yr, thisM), 0);
-    const upcoming = a.map(i => ({ i, d: nextPayment(i, now) })).filter(x => x.d)
+    const upcoming = a.map(i => ({ i, d: nextPayment(i, now) }))
+      .filter(x => x.d && !isBlank(x.i, x.d.getFullYear(), x.d.getMonth() + 1))      // 기록이 없는 달은 금액을 알 수 없으므로 제외
       .sort((p, q) => p.d - q.d)[0];
     const cards = [
       ['매월 고정지출', won(mSum), `${fx.filter(i => i.cycle === 'monthly').length}건 · 기본 금액 기준`],
       ['연간 고정지출(매년 결제분)', won(ySum), `${fx.filter(i => i.cycle === 'yearly').length}건`],
-      ['연 환산 총액', won(annual), `${yr}년 기준 · 월 평균 ${won(annual / 12)}`],
+      ['올해 지출 합계', won(annual), `${yr}년 · 기록된 금액 + 고정 금액`],
       [`${thisM}월 결제 예정`, won(thisMonthTotal), '고정 항목 + 이번 달 지출 기록'],
       ['다음 결제', upcoming ? `${upcoming.d.getMonth()+1}/${upcoming.d.getDate()}` : '-',
         upcoming ? `${upcoming.i.name} · ${won(amountIn(upcoming.i, upcoming.d.getFullYear(), upcoming.d.getMonth() + 1))}` : '예정 없음'],
@@ -670,8 +681,8 @@
         <td>${i.category ? `<span class="tag">${esc(i.category)}</span>` : ''}</td>
         <td><span class="tag ${i.cycle === 'yearly' ? 'y' : ''}">${i.cycle === 'monthly' ? '매월' : '매년'}</span></td>
         <td>${i.cycle === 'yearly' ? i.month + '월 ' : ''}${i.day ? i.day + '일' : '상시'}</td>
-        <td class="num">${won(i.amount)}${hasVar(i) ? '<div class="hint">기본</div>' : ''}</td>
-        <td class="num">${won(monthlyEq(i, thisYear()))}</td>
+        <td class="num">${blankStyle(i) ? '<span class="hint">월별 기록</span>' : won(i.amount) + (hasVar(i) ? '<div class="hint">기본</div>' : '')}</td>
+        <td class="num">${blankStyle(i) ? won(recAvg(i)) + '<div class="hint">기록 평균</div>' : won(monthlyEq(i, thisYear()))}</td>
         <td class="row" style="justify-content:flex-end;flex-wrap:nowrap">
           <button class="small" data-act="toggle" data-id="${i.id}">${i.active ? '중지' : '재개'}</button>
           <button class="small" data-act="edit" data-id="${i.id}">수정</button>
@@ -689,7 +700,7 @@
     const max = Math.max(...totals, 1);
     $('#months').innerHTML = totals.map((t, k) => {
       const m = k + 1;
-      const list = active().filter(i => paidIn(i, m) && !(i.virtual && amountIn(i, calYear, m) === 0)).sort((a, b) => (dayIn(a, calYear, m) || 99) - (dayIn(b, calYear, m) || 99));
+      const list = active().filter(i => paidIn(i, m) && !isBlank(i, calYear, m)).sort((a, b) => (dayIn(a, calYear, m) || 99) - (dayIn(b, calYear, m) || 99));
       const isNow = now.getFullYear() === calYear && now.getMonth() === k;
       return `<div class="month ${isNow ? 'now' : ''}">
         <div class="mh"><span>${m}월</span><span>${won(t)}</span></div>
@@ -935,7 +946,7 @@
     varInputs.innerHTML = Array.from({ length: 12 }, (_, k) => {
       const v = formOv[ymKey(varY, k + 1)];
       return `<label>${k + 1}월<input type="number" min="0" step="1" inputmode="numeric" data-m="${k + 1}"
-        value="${v ?? ''}" placeholder="${esc(form.amount.value || '기본')}"></label>`;
+        value="${v ?? ''}" placeholder="${esc(Number(form.amount.value) > 0 ? form.amount.value : '미기록')}"></label>`;
     }).join('');
   }
   function flushVar() {                       // 화면의 입력값을 formOv로 옮긴다 (빈 칸 = 기본 금액)
@@ -946,7 +957,7 @@
   }
   varYear.addEventListener('change', () => { flushVar(); varY = Number(varYear.value); renderVar(); });
   form.amount.addEventListener('input', () =>
-    varInputs.querySelectorAll('input').forEach(inp => inp.placeholder = form.amount.value || '기본'));
+    varInputs.querySelectorAll('input').forEach(inp => inp.placeholder = Number(form.amount.value) > 0 ? form.amount.value : '미기록'));
 
   function resetForm() {
     editingId = null; form.reset(); syncCycle();
@@ -1054,19 +1065,22 @@
     const tb = mk('tbody'); let total = 0, rec = 0, est = 0;
     for (let m = 1; m <= 12; m++) {
       if (!paidIn(it, m)) continue;
-      const amt = amountIn(it, dtYear, m), isRec = typeof (it.overrides && it.overrides[ymKey(dtYear, m)]) === 'number';
+      const isRec = hasOv(it, dtYear, m), blank = isBlank(it, dtYear, m);
+      const amt = blank ? 0 : amountIn(it, dtYear, m);
       const d = dayIn(it, dtYear, m);
-      const kind = !hasVar(it) ? '고정 금액' : isRec ? '기록' : '기본 금액(추정)';
-      if (hasVar(it)) { if (isRec) rec++; else est++; }
+      const kind = blank ? '미기록' : !hasVar(it) ? '고정 금액' : isRec ? '기록' : '기본 금액(추정)';
+      if (hasVar(it)) { if (isRec) rec++; else if (!blank) est++; }
       total += amt;
       const tr = mk('tr'); if (hasVar(it) && !isRec) tr.style.color = 'var(--muted)';
       tr.append(mk('td', '', `${m}월`), mk('td', '', d ? `${dtYear}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}` : '상시'),
-        mk('td', 'num', won(amt)), mk('td', '', kind));
+        mk('td', 'num', blank ? '-' : won(amt)), mk('td', '', kind));
       tb.append(tr);
     }
     table.append(tb);
-    $('#dtSummary').textContent = `${dtYear}년 합계 ${won(total)} · 월 평균 ${won(total / 12)}` +
-      (hasVar(it) ? ` · 기록 ${rec}개월, 기본 금액(추정) ${est}개월` : '');
+    // 빈 칸이 있는 항목은 12로 나눈 평균이 실제보다 작게 나오므로, 기록이 있는 달의 평균을 보여 준다.
+    $('#dtSummary').textContent = blankStyle(it)
+      ? `${dtYear}년 합계 ${won(total)} · 기록 ${rec}개월` + (rec ? ` · 기록 월 평균 ${won(total / rec)}` : '')
+      : `${dtYear}년 합계 ${won(total)} · 월 평균 ${won(total / 12)}` + (hasVar(it) ? ` · 기록 ${rec}개월, 기본 금액(추정) ${est}개월` : '');
   }
   $('#dtClose').onclick = () => dlg.close();
   dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });          // 창 바깥(어두운 배경)을 누르면 닫힘
