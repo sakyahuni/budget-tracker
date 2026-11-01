@@ -114,6 +114,7 @@
   dialog{width:calc(100% - 32px);max-width:560px;padding:0;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--text)}
   dialog::backdrop{background:rgba(0,0,0,.45)}
   .dt-body{padding:16px}
+  .dt-in{width:96px;padding:4px 6px;text-align:right}
   #dtMeta{white-space:pre-line}
   #dtTable{min-width:0;font-size:13px}
   #dtTable th,#dtTable td{white-space:nowrap;padding:8px 6px}
@@ -182,12 +183,12 @@
         <input name="memo" placeholder="결제 수단, 해지 조건 등 (선택)">
       </label>
       <details id="varBox" class="wide">
-        <summary>월별 금액이 달라지는 항목 (가스·수도요금 등)</summary>
+        <summary>월별 금액 (요금제 변경·구독 중단·공과금 등)</summary>
         <div class="row" style="margin:8px 0">
           <label style="flex-direction:row;align-items:center;gap:8px">연도
             <select id="varYear"></select>
           </label>
-          <span class="hint">비워 두면 기본 금액이 적용되며, 기본 금액이 0원이면 그 달은 빈 칸(미기록)으로 남습니다.</span>
+          <span class="hint">비워 두면 기본 금액이 적용됩니다. 0을 넣으면 그 달은 중단(0원)이고, 기본 금액이 0원이면 빈 칸(미기록)으로 남습니다. 항목 이름을 눌러 열리는 창의 [금액 수정]에서도 고칠 수 있습니다.</span>
         </div>
         <div class="mamt" id="varInputs"></div>
       </details>
@@ -327,7 +328,10 @@
   <div class="dt-body">
     <div class="row between">
       <h2 id="dtTitle" style="margin:0"></h2>
-      <button type="button" class="small" id="dtClose">닫기</button>
+      <div class="row">
+        <button type="button" class="small" id="dtEdit" aria-pressed="false">금액 수정</button>
+        <button type="button" class="small" id="dtClose">닫기</button>
+      </div>
     </div>
     <div class="hint" id="dtMeta" style="margin-top:4px"></div>
     <div class="row" style="margin:12px 0 8px">
@@ -336,6 +340,7 @@
       <button type="button" class="small" id="dtNext" aria-label="다음 연도">▶</button>
       <button type="button" class="small" id="dtThis">올해</button>
     </div>
+    <div class="hint hidden" id="dtEditHint" style="margin-bottom:8px">월별 금액을 고치면 바로 저장됩니다. 요금제가 바뀐 경우 새 금액을 넣고 ↓를 누르면 그 달부터 아래 달에 모두 적용됩니다. 0을 넣으면 그 달은 중단(0원)이고, 비우면 기본 금액(없으면 미기록)으로 돌아갑니다.</div>
     <div class="scroll"><table id="dtTable"></table></div>
     <div class="hint" id="dtSummary" style="margin-top:8px"></div>
   </div>
@@ -689,7 +694,7 @@
     const max = Math.max(...totals, 1);
     $('#months').innerHTML = totals.map((t, k) => {
       const m = k + 1;
-      const list = active().filter(i => paidIn(i, m) && !isBlank(i, calYear, m)).sort((a, b) => (dayIn(a, calYear, m) || 99) - (dayIn(b, calYear, m) || 99));
+      const list = active().filter(i => paidIn(i, m) && !isBlank(i, calYear, m) && amountIn(i, calYear, m) > 0).sort((a, b) => (dayIn(a, calYear, m) || 99) - (dayIn(b, calYear, m) || 99));
       const isNow = now.getFullYear() === calYear && now.getMonth() === k;
       return `<div class="month ${isNow ? 'now' : ''}">
         <div class="mh"><span>${m}월</span><span>${won(t)}</span></div>
@@ -990,7 +995,7 @@
       day: d.get('day') === '0' ? 0 : (Number(d.get('day')) || 1),
       memo: d.get('memo').trim(),
     };
-    rec.overrides = rec.cycle === 'monthly' ? cleanOverrides(formOv) : {};
+    rec.overrides = cleanOverrides(formOv);
     if (!rec.name) return;
     if (editingId) {
       items = items.map(i => i.id === editingId ? { ...i, ...rec } : i);
@@ -1052,13 +1057,37 @@
   try { if (localStorage.getItem(MODE_KEY) === 'cat') { barMode = 'cat'; } } catch {}
 
   // ---- 항목별 지출 내역(목록에서 항목 이름을 누르면 열림) ---------------------------
-  // 선택한 고정 항목의 한 해 12개월 지출을 월별로 보여 준다. 월별 금액이 기록된 달은 '기록',
-  // 기록이 없는 달은 기본 금액으로 계산한 '기본 금액(추정)', 월별 금액을 쓰지 않는 항목은 '고정 금액'으로 표시한다.
+  // 선택한 고정 항목의 한 해 12개월 지출을 월별로 보여 준다. 구분: 월별 금액이 기록된 달은 '기록'(0원이면 '중단(0원)'),
+  // 기록이 없는 달은 기본 금액이 있으면 '기본 금액', 없으면 '미기록', 월별 금액을 쓰지 않는 항목은 '고정 금액'.
+  // [금액 수정]을 누르면 월별 금액을 이 창에서 바로 고칠 수 있다(요금제 변경·구독 중단 등).
   const dlg = $('#detail');
-  let dtId = null, dtYear = thisYear();
+  let dtId = null, dtYear = thisYear(), dtEdit = false;
   function openDetail(it) {
-    dtId = it.id; dtYear = thisYear(); renderDetail();
+    dtId = it.id; dtYear = thisYear(); dtEdit = false; renderDetail();
     if (!dlg.open) dlg.showModal();
+  }
+  function dtRow(it, m) {
+    const isRec = hasOv(it, dtYear, m), blank = isBlank(it, dtYear, m);
+    const amt = blank ? 0 : amountIn(it, dtYear, m);
+    const kind = blank ? '미기록' : isRec ? (amt === 0 ? '중단(0원)' : '기록') : hasVar(it) ? '기본 금액' : '고정 금액';
+    return { isRec, blank, amt, kind };
+  }
+  function renderDtSummary(it) {
+    let total = 0, rec = 0, est = 0;
+    for (let m = 1; m <= 12; m++) {
+      if (!paidIn(it, m)) continue;
+      const r = dtRow(it, m); total += r.amt;
+      if (hasVar(it)) { if (r.isRec) rec++; else if (!r.blank) est++; }
+    }
+    // 빈 칸이 있는 항목은 12로 나눈 평균이 실제보다 작게 나오므로, 기록이 있는 달의 평균을 보여 준다.
+    $('#dtSummary').textContent = blankStyle(it)
+      ? `${dtYear}년 합계 ${won(total)} · 기록 ${rec}개월` + (rec ? ` · 기록 월 평균 ${won(total / rec)}` : '')
+      : `${dtYear}년 합계 ${won(total)} · 월 평균 ${won(total / 12)}` + (hasVar(it) ? ` · 기록 ${rec}개월, 기본 금액 ${est}개월` : '');
+  }
+  // 한 달의 금액을 바꾼다. val이 null이면 그 달의 기록을 지워 기본 금액(없으면 미기록)으로 돌아간다.
+  function setMonthAmount(it, m, val) {
+    const key = ymKey(dtYear, m); it.overrides = { ...(it.overrides || {}) };
+    if (val === null) delete it.overrides[key]; else it.overrides[key] = Math.max(0, val);
   }
   function renderDetail() {
     const it = items.find(i => i.id === dtId);
@@ -1069,27 +1098,57 @@
       it.day ? `${it.day}일` : '상시', `금액 ${fixedLabel(it)}`, it.active ? '' : '중지됨'].filter(Boolean).join(' · ')
       + (it.memo ? `\n${it.memo}` : '');                               // 목록에서 뺀 메모는 여기서 보여 준다
     $('#dtYear').textContent = `${dtYear}년`;
+    $('#dtEdit').textContent = dtEdit ? '수정 완료' : '금액 수정';
+    $('#dtEdit').setAttribute('aria-pressed', String(dtEdit));
+    $('#dtEditHint').classList.toggle('hidden', !dtEdit);
     const head = mk('tr');
     head.append(mk('th', '', '월'), mk('th', 'num', '금액'), mk('th', '', '구분'));      // 납기일(날짜) 열은 두지 않는다
+    if (dtEdit) head.append(mk('th', '', ''));
     const thead = mk('thead'); thead.append(head); table.append(thead);
-    const tb = mk('tbody'); let total = 0, rec = 0, est = 0;
+    const tb = mk('tbody');
     for (let m = 1; m <= 12; m++) {
       if (!paidIn(it, m)) continue;
-      const isRec = hasOv(it, dtYear, m), blank = isBlank(it, dtYear, m);
-      const amt = blank ? 0 : amountIn(it, dtYear, m);
-      const kind = blank ? '미기록' : !hasVar(it) ? '고정 금액' : isRec ? '기록' : '기본 금액(추정)';
-      if (hasVar(it)) { if (isRec) rec++; else if (!blank) est++; }
-      total += amt;
-      const tr = mk('tr'); if (hasVar(it) && !isRec) tr.style.color = 'var(--muted)';
-      tr.append(mk('td', '', `${m}월`), mk('td', 'num', blank ? '-' : won(amt)), mk('td', '', kind));
+      const r = dtRow(it, m);
+      const tr = mk('tr'), kindTd = mk('td', '', r.kind);
+      const paint = () => { const x = dtRow(it, m); kindTd.textContent = x.kind; tr.style.color = hasVar(it) && !x.isRec ? 'var(--muted)' : ''; };
+      let amtTd;
+      if (!dtEdit) {
+        amtTd = mk('td', 'num', r.blank ? '-' : won(r.amt));
+      } else {
+        amtTd = mk('td', 'num');
+        const inp = mk('input'); inp.type = 'number'; inp.min = '0'; inp.step = '1'; inp.inputMode = 'numeric';
+        inp.className = 'dt-in'; inp.setAttribute('aria-label', `${m}월 금액`);
+        inp.placeholder = '미기록'; inp.value = r.blank ? '' : String(r.amt);
+        // 값을 고치면 그 자리에서 저장한다. 표를 다시 그리지 않으므로 Tab으로 다음 달로 바로 이동할 수 있다.
+        inp.addEventListener('change', () => {
+          const v = inp.value.trim();
+          setMonthAmount(it, m, v === '' ? null : (Number(v) || 0)); save(); paint(); renderDtSummary(it);
+        });
+        inp.addEventListener('keydown', e => {                // Enter: 저장하고 다음 달 칸으로 이동
+          if (e.key !== 'Enter') return;
+          const next = tr.nextElementSibling && tr.nextElementSibling.querySelector('input');
+          if (next) { e.preventDefault(); inp.dispatchEvent(new Event('change')); next.focus(); next.select(); }
+        });
+        amtTd.append(inp);
+      }
+      tr.style.color = hasVar(it) && !r.isRec ? 'var(--muted)' : '';
+      tr.append(mk('td', '', `${m}월`), amtTd, kindTd);
+      if (dtEdit) {
+        const ap = mk('td'), b = mk('button', 'small', '↓'); b.type = 'button';
+        b.title = '이 달의 금액을 아래 달에 모두 적용'; b.setAttribute('aria-label', `${m}월 금액을 아래 달에 모두 적용`);
+        b.addEventListener('click', () => {
+          const v = amtTd.querySelector('input').value.trim(); if (v === '') return;
+          for (let mm = m; mm <= 12; mm++) if (paidIn(it, mm)) setMonthAmount(it, mm, Number(v) || 0);
+          save(); renderDetail();
+        });
+        ap.append(b); tr.append(ap);
+      }
       tb.append(tr);
     }
     table.append(tb);
-    // 빈 칸이 있는 항목은 12로 나눈 평균이 실제보다 작게 나오므로, 기록이 있는 달의 평균을 보여 준다.
-    $('#dtSummary').textContent = blankStyle(it)
-      ? `${dtYear}년 합계 ${won(total)} · 기록 ${rec}개월` + (rec ? ` · 기록 월 평균 ${won(total / rec)}` : '')
-      : `${dtYear}년 합계 ${won(total)} · 월 평균 ${won(total / 12)}` + (hasVar(it) ? ` · 기록 ${rec}개월, 기본 금액(추정) ${est}개월` : '');
+    renderDtSummary(it);
   }
+  $('#dtEdit').onclick = () => { dtEdit = !dtEdit; renderDetail(); };
   $('#dtClose').onclick = () => dlg.close();
   dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });          // 창 바깥(어두운 배경)을 누르면 닫힘
   $('#dtPrev').onclick = () => { dtYear--; renderDetail(); };
@@ -1205,7 +1264,7 @@
     for (const it of fixedActive()) for (const y of ys) for (let m = 1; m <= 12; m++) {
       if (!paidIn(it, m) || isBlank(it, y, m)) continue;
       const amt = amountIn(it, y, m);
-      if (!(amt > 0) && !hasOv(it, y, m)) continue;
+      if (!(amt > 0)) continue;
       const d = dayIn(it, y, m), mm = String(m).padStart(2, '0');
       out.push([d ? `${y}-${mm}-${String(d).padStart(2, '0')}` : `${y}-${mm}`, '고정지출', it.name, it.category || '', amt, '']);
     }
