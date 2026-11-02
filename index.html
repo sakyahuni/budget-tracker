@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Dodo Budget</title>
+<title>Budget Tracker</title>
 <style>
   :root{
     --bg:#f6f7f9; --card:#fff; --text:#1d2330; --muted:#6b7385; --line:#e3e6ec;
@@ -172,7 +172,7 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>Dodo Budget</h1>
+  <h1>Budget Tracker</h1>
 
   <div class="card remind hidden" id="backupRemind" role="status">
     <div>
@@ -1776,8 +1776,8 @@
     $('#remindTitle').textContent = `${now.getMonth() + 1}월 백업 알림`;
     $('#remindMsg').textContent = `이번 달 백업(JSON)을 아직 받지 않았습니다. 마지막 백업: ${last || '기록 없음'}`;
   }
-  // '자동 저장' 옆에 보이는 저장 위치 설명. 브라우저는 폴더 경로를 알려 주지 않으므로 사용자가 적어 두는 설명이며, 이 브라우저에만 저장한다.
-  const WHERE_KEY = 'dodo-budget.locationNote', WHERE_DEFAULT = 'Macmini - iCloud / Numbers 폴더';
+  // '자동 저장' 옆에 보이는 저장 위치 설명(처음에는 비어 있고, ✎로 적으면 그 내용이 표시된다). 브라우저는 폴더 경로를 알려 주지 않으므로 사용자가 적어 두는 설명이며, 이 브라우저에만 저장한다.
+  const WHERE_KEY = 'dodo-budget.locationNote', WHERE_DEFAULT = '';
   const whereText = () => { const v = lget(WHERE_KEY); return v === null ? WHERE_DEFAULT : v; };
   function renderWhere() { const t = whereText().trim(); $('#storageWhere').textContent = t ? `(${t})` : ''; }
   $('#whereEdit').onclick = () => {
@@ -1797,11 +1797,11 @@
     const first = new Date(d.getFullYear(), d.getMonth() + (pastNine ? 1 : 0), 1);      // 첫 알림은 다음 1일
     const ymd = isoDate(first).replace(/-/g, '');
     const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
-    const ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Dodo Budget//Backup Reminder//KO', 'CALSCALE:GREGORIAN',
+    const ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Budget Tracker//Backup Reminder//KO', 'CALSCALE:GREGORIAN',
       'BEGIN:VEVENT', 'UID:dodo-budget-backup-reminder@dodo-budget', `DTSTAMP:${stamp}`,
       `DTSTART:${ymd}T090000`, `DTEND:${ymd}T093000`, 'RRULE:FREQ=MONTHLY;BYMONTHDAY=1',
-      'SUMMARY:Dodo Budget 백업', 'DESCRIPTION:백업 내려받기(JSON)를 눌러 주세요',
-      'BEGIN:VALARM', 'ACTION:DISPLAY', 'DESCRIPTION:Dodo Budget 백업', 'TRIGGER:PT0S', 'END:VALARM',
+      'SUMMARY:Budget Tracker 백업', 'DESCRIPTION:백업 내려받기(JSON)를 눌러 주세요',
+      'BEGIN:VALARM', 'ACTION:DISPLAY', 'DESCRIPTION:Budget Tracker 백업', 'TRIGGER:PT0S', 'END:VALARM',
       'END:VEVENT', 'END:VCALENDAR'].join('\r\n') + '\r\n';
     download('dodo-budget-backup-reminder.ics', ics, 'text/calendar;charset=utf-8');
   };
